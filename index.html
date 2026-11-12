@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Pocket Football League - 2.5D Arcade Football</title>
+    <meta name="description" content="A browser-based 2.5D arcade 3v3 football game with professional broadcast presentation, crowd ambience, quick match, and 8-team knockout tournament." />
+    <meta property="og:title" content="Pocket Football League - 2.5D Arcade Football" />
+    <meta property="og:description" content="A browser-based 2.5D arcade 3v3 football game with professional broadcast presentation, crowd ambience, quick match, and 8-team knockout tournament." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="stylesheet" href="/src/index.css" />
+  </head>
+  <body>
+    <div class="arcade-container">
+      <!-- In-Game Arcade Header (Visible ONLY during active match) -->
+      <header id="inGameHeader" class="arcade-header hidden">
+        <div class="brand-title">
+          <button id="inGameMenuBtn" class="arcade-btn" title="Return to Main Menu" style="padding: 0.25rem 0.6rem; font-size: 0.75rem;">
+            ◀ Menu
+          </button>
+          <span>⚽ Pocket Football</span>
+        </div>
+
+        <div class="scoreboard">
+          <div id="homeTeamBadge" class="team-score-badge">
+            <span id="homeBadgeIcon">🌊</span>
+            <span id="homeShortName" class="team-shortname">BLU</span>
+            <span id="scoreBlue" class="score-digit">0</span>
+          </div>
+          <span class="score-separator">-</span>
+          <div id="awayTeamBadge" class="team-score-badge">
+            <span id="scoreRed" class="score-digit">0</span>
+            <span id="awayShortName" class="team-shortname">RED</span>
+            <span id="awayBadgeIcon">⚡</span>
+          </div>
+          <div id="matchClock" class="clock-display">03:00</div>
+        </div>
+
+        <div class="header-actions">
+          <span id="playerTag" class="player-tag">P1: #10 (FW)</span>
+          <button id="cameraBtn" class="arcade-btn" title="Toggle camera: Dynamic Follow or Full Pitch (Key C)">
+            Cam: Dynamic
+          </button>
+          <button id="soundQuickBtn" class="arcade-btn" title="Toggle Mute">
+            🔊 Sound
+          </button>
+          <button id="headerSettingsBtn" class="arcade-btn" title="Audio Settings">
+            ⚙️
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Canvas Viewport -->
+      <main class="canvas-wrapper">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- 1. MAIN MENU OVERLAY -->
+        <div id="mainMenuOverlay" class="screen-overlay active">
+          <div class="menu-card glass-panel">
+            <div class="menu-logo-box">
+              <div class="menu-trophy-badge">🏆</div>
+              <h1 class="game-title">POCKET FOOTBALL</h1>
+              <div class="game-subtitle">★ LEAGUE 2026 ★</div>
+            </div>
+
+            <div class="menu-buttons-group">
+              <button id="startQuickMatchBtn" class="menu-action-btn primary-action">
+                <span class="btn-icon">⚡</span>
+                <span class="btn-label">Quick Match</span>
+              </button>
+              <button id="openTournamentBtn" class="menu-action-btn gold-action">
+                <span class="btn-icon">🏆</span>
+                <span class="btn-label">Tournament Cup</span>
+                <span id="tournamentBadgeIndicator" class="mini-tag hidden">ACTIVE</span>
+              </button>
+              <button id="openSettingsBtn" class="menu-action-btn secondary-action">
+                <span class="btn-icon">🔊</span>
+                <span class="btn-label">Sound & Settings</span>
+              </button>
+              <button id="openHelpBtn" class="menu-action-btn secondary-action">
+                <span class="btn-icon">🎮</span>
+                <span class="btn-label">How to Play</span>
+              </button>
+            </div>
+
+            <div class="menu-footer-hint">
+              <span>Pro Tip: Press <kbd class="key-badge">X</kbd> to ground pass &amp; <kbd class="key-badge">Space</kbd> to power shoot!</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. QUICK MATCH SETUP MODAL -->
+        <div id="quickMatchModal" class="screen-overlay">
+          <div class="modal-card glass-panel large-modal">
+            <div class="modal-header">
+              <h2>⚡ Quick Match Setup</h2>
+              <button id="closeQuickMatchBtn" class="close-x-btn">✕</button>
+            </div>
+
+            <div class="setup-grid">
+              <!-- Home / Player Team -->
+              <div class="team-selection-col">
+                <div class="col-title" style="color: #38bdf8;">YOUR TEAM (HOME)</div>
+                <div id="homeTeamPicker" class="team-carousel">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+
+              <!-- VS Badge & Duration -->
+              <div class="setup-center-col">
+                <div class="vs-circle">VS</div>
+                <div class="duration-selector-box">
+                  <div class="duration-label">Match Duration</div>
+                  <div id="durationPills" class="duration-pills">
+                    <button class="pill-btn" data-duration="60">1 Min</button>
+                    <button class="pill-btn" data-duration="120">2 Min</button>
+                    <button class="pill-btn active" data-duration="180">3 Min</button>
+                    <button class="pill-btn" data-duration="300">5 Min</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Away / CPU Team -->
+              <div class="team-selection-col">
+                <div class="col-title" style="color: #f87171;">OPPONENT (AWAY)</div>
+                <div id="awayTeamPicker" class="team-carousel">
+                  <!-- Injected via JS -->
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-actions-footer">
+              <button id="cancelQuickMatchBtn" class="arcade-btn">Cancel</button>
+              <button id="launchQuickMatchBtn" class="arcade-btn btn-primary btn-large">
+                ⚽ Kick Off Match
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. PRE-MATCH INTRODUCTION SCREEN (BROADCAST STYLE) -->
+        <div id="preMatchOverlay" class="screen-overlay">
+          <div class="pre-match-card glass-panel">
+            <div class="broadcast-top-strip">
+              <span class="live-dot">●</span>
+              <span>POCKET FOOTBALL LEAGUE BROADCAST</span>
+            </div>
+
+            <div class="pre-match-teams-wrapper">
+              <!-- Left Team -->
+              <div class="pre-match-team" id="preMatchHomeCard">
+                <div class="pre-match-badge" id="preHomeBadge">🌊</div>
+                <h3 class="pre-team-name" id="preHomeName">Blue Waves</h3>
+                <div class="pre-formation-badge">Formation: 1-1-1</div>
+                <div class="lineup-box" id="preHomeLineup">
+                  <!-- GK, DF, FW names -->
+                </div>
+              </div>
+
+              <!-- VS Flame Display -->
+              <div class="pre-match-center">
+                <div class="pre-vs-animation">VS</div>
+                <div class="pre-match-duration" id="preDurationText">3:00 MATCH</div>
+              </div>
+
+              <!-- Right Team -->
+              <div class="pre-match-team" id="preMatchAwayCard">
+                <div class="pre-match-badge" id="preAwayBadge">⚡</div>
+                <h3 class="pre-team-name" id="preAwayName">Red Strikers</h3>
+                <div class="pre-formation-badge">Formation: 1-1-1</div>
+                <div class="lineup-box" id="preAwayLineup">
+                  <!-- GK, DF, FW names -->
+                </div>
+              </div>
+            </div>
+
+            <div class="pre-match-footer">
+              <button id="preMatchKickoffBtn" class="arcade-btn btn-primary btn-large pulse-glow">
+                ⚡ Kick-Off!
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. TOURNAMENT BRACKET MODAL -->
+        <div id="tournamentModal" class="screen-overlay">
+          <div class="modal-card glass-panel bracket-modal">
+            <div class="modal-header">
+              <div class="bracket-title-box">
+                <h2>🏆 Knockout Cup Championship</h2>
+                <div id="tournamentStatusSubtitle" class="bracket-subtitle">8 Teams · Single Elimination</div>
+              </div>
+              <button id="closeTournamentBtn" class="close-x-btn">✕</button>
+            </div>
+
+            <div class="tournament-content-area">
+              <!-- If no tournament started, show team picker -->
+              <div id="tournamentTeamSelectView" class="tournament-view hidden">
+                <h3 style="text-align: center; margin-bottom: 0.5rem; color: #facc15;">Select Your Club For The Cup</h3>
+                <p style="text-align: center; color: #94a3b8; font-size: 0.85rem; margin-bottom: 1rem;">
+                  Lead your 3v3 team through 3 knockout stages: Quarter-Finals, Semi-Finals &amp; The Final!
+                </p>
+                <div id="tournamentTeamGrid" class="teams-grid-picker">
+                  <!-- Injected via JS -->
+                </div>
+                <div style="text-align: center; margin-top: 1rem;">
+                  <button id="startTournamentCampaignBtn" class="arcade-btn btn-primary btn-large">
+                    Enter Tournament
+                  </button>
+                </div>
+              </div>
+
+              <!-- Active Bracket Tree View -->
+              <div id="tournamentBracketView" class="tournament-view">
+                <div class="bracket-tree-container">
+                  <!-- QF Column -->
+                  <div class="bracket-round-col">
+                    <div class="round-header">Quarter-Finals</div>
+                    <div id="qfFixturesList" class="round-fixtures"></div>
+                  </div>
+                  <!-- SF Column -->
+                  <div class="bracket-round-col">
+                    <div class="round-header">Semi-Finals</div>
+                    <div id="sfFixturesList" class="round-fixtures"></div>
+                  </div>
+                  <!-- Final Column -->
+                  <div class="bracket-round-col final-col">
+                    <div class="round-header golden-header">The Final 🏆</div>
+                    <div id="finalFixturesList" class="round-fixtures"></div>
+                  </div>
+                </div>
+
+                <div class="bracket-action-bar">
+                  <button id="abandonTournamentBtn" class="arcade-btn" style="color: #f87171;">
+                    Restart Cup
+                  </button>
+                  <button id="playTournamentMatchBtn" class="arcade-btn btn-primary btn-large">
+                    ⚽ Play Next Match
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. FULL TIME RESULTS MODAL -->
+        <div id="fullTimeModal" class="screen-overlay">
+          <div class="modal-card glass-panel result-modal">
+            <div class="result-broadcast-title">MATCH CONCLUDED</div>
+            <h1 id="fullTimeHeadline" class="fulltime-headline">FULL TIME</h1>
+
+            <div class="fulltime-score-box">
+              <div class="ft-team-side">
+                <div id="ftHomeBadge" class="ft-badge">🌊</div>
+                <div id="ftHomeName" class="ft-team-name">Blue Waves</div>
+                <div id="ftHomeScore" class="ft-score-num">0</div>
+              </div>
+              <div class="ft-vs-divider">-</div>
+              <div class="ft-team-side">
+                <div id="ftAwayScore" class="ft-score-num">0</div>
+                <div id="ftAwayName" class="ft-team-name">Red Strikers</div>
+                <div id="ftAwayBadge" class="ft-badge">⚡</div>
+              </div>
+            </div>
+
+            <div id="fullTimeOutcomeMsg" class="fulltime-outcome-banner">
+              BLUE WAVES VICTORIOUS!
+            </div>
+
+            <div id="penaltyShootoutNote" class="penalty-shootout-note hidden">
+              <!-- Penalty shootout scoreline if applicable -->
+            </div>
+
+            <div class="fulltime-actions">
+              <button id="ftGoldenGoalBtn" class="arcade-btn btn-teal btn-large hidden">
+                ⚡ Settle via Golden Goal!
+              </button>
+              <button id="ftViewMvpBtn" class="arcade-btn gold-action btn-large">
+                ⭐ Match MVP
+              </button>
+              <button id="ftRematchBtn" class="arcade-btn btn-large">
+                🔄 Rematch
+              </button>
+              <button id="ftContinueTournamentBtn" class="arcade-btn btn-primary btn-large hidden">
+                🏆 Continue Tournament
+              </button>
+              <button id="ftReturnMenuBtn" class="arcade-btn btn-large">
+                🏠 Main Menu
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5B. MATCH MVP SCREEN (BADGE STYLE) -->
+        <div id="matchMvpModal" class="screen-overlay">
+          <div class="modal-card glass-panel mvp-card">
+            <div class="mvp-award-ribbon">
+              <span class="ribbon-star">★</span>
+              <span>OFFICIAL MATCH AWARD</span>
+              <span class="ribbon-star">★</span>
+            </div>
+
+            <h1 class="mvp-heading">MATCH MVP</h1>
+            <div class="mvp-subheading">PLAYER OF THE MATCH</div>
+
+            <!-- Shield Badge Container -->
+            <div id="mvpBadgeFrame" class="mvp-shield-badge">
+              <div class="badge-sheen"></div>
+              
+              <div class="mvp-badge-top-row">
+                <span class="badge-trophy-symbol">🏆</span>
+                <span id="mvpBadgeRole" class="badge-role-tag">FORWARD</span>
+                <span id="mvpBadgeRating" class="badge-rating-val">★ 9.8</span>
+              </div>
+
+              <!-- Jersey & Number Display -->
+              <div class="mvp-jersey-circle" id="mvpJerseyCircle">
+                <div class="mvp-jersey-icon">👕</div>
+                <div id="mvpNumberDisplay" class="mvp-number-display">#10</div>
+              </div>
+
+              <!-- Player Details -->
+              <div class="mvp-player-info">
+                <h2 id="mvpPlayerName" class="mvp-player-name">L. Messi</h2>
+                <div class="mvp-club-row">
+                  <span id="mvpClubBadge" class="mvp-club-badge">🌊</span>
+                  <span id="mvpClubName" class="mvp-club-name">Blue Waves</span>
+                </div>
+              </div>
+
+              <!-- Key Stats Triad (Goals, Tackles, Passes) -->
+              <div class="mvp-stats-row">
+                <div class="mvp-stat-card">
+                  <span class="stat-icon">⚽</span>
+                  <div id="mvpStatGoals" class="stat-num">2</div>
+                  <div class="stat-label">GOALS</div>
+                </div>
+                <div class="mvp-stat-card highlight-card">
+                  <span class="stat-icon">🛡️</span>
+                  <div id="mvpStatTackles" class="stat-num">4</div>
+                  <div class="stat-label">TACKLES</div>
+                </div>
+                <div class="mvp-stat-card">
+                  <span class="stat-icon">👟</span>
+                  <div id="mvpStatPasses" class="stat-num">11</div>
+                  <div class="stat-label">PASSES</div>
+                </div>
+              </div>
+
+              <!-- Performance Summary Commentary -->
+              <div id="mvpCommentary" class="mvp-commentary">
+                Outstanding match performance with decisive attacking flair and relentless ball recoveries.
+              </div>
+            </div>
+
+            <!-- Navigation Actions -->
+            <div class="mvp-actions-row">
+              <button id="mvpBackToScoreBtn" class="arcade-btn">
+                ◀ Results
+              </button>
+              <button id="mvpRematchBtn" class="arcade-btn btn-large">
+                🔄 Rematch
+              </button>
+              <button id="mvpContinueTournBtn" class="arcade-btn btn-primary btn-large hidden">
+                🏆 Next Match
+              </button>
+              <button id="mvpReturnMenuBtn" class="arcade-btn btn-large">
+                🏠 Main Menu
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 6. TOURNAMENT CHAMPION TROPHY SCREEN -->
+        <div id="championModal" class="screen-overlay">
+          <div class="modal-card glass-panel champion-card">
+            <div class="champion-trophy-glow">🏆</div>
+            <h1 class="champion-title">TOURNAMENT CHAMPIONS!</h1>
+            <div id="championTeamBanner" class="champion-team-banner">
+              🌊 BLUE WAVES LIFT THE CUP! 🌊
+            </div>
+            <p class="champion-desc">
+              Congratulations! You have conquered the Pocket Football League knockout championship!
+            </p>
+            <div style="margin-top: 1.5rem;">
+              <button id="championReturnMenuBtn" class="arcade-btn btn-primary btn-large">
+                Back to Main Menu
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7. SOUND & SETTINGS MODAL -->
+        <div id="settingsModal" class="screen-overlay">
+          <div class="modal-card glass-panel settings-card">
+            <div class="modal-header">
+              <h2>🔊 Audio & Sound Settings</h2>
+              <button id="closeSettingsBtn" class="close-x-btn">✕</button>
+            </div>
+
+            <div class="settings-body">
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Master Volume</div>
+                  <div class="setting-sub">Overall game audio level</div>
+                </div>
+                <div class="slider-control">
+                  <input type="range" id="masterVolumeSlider" min="0" max="100" value="80" class="arcade-slider" />
+                  <span id="masterVolumeVal" class="slider-val">80%</span>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-info">
+                  <div class="setting-name">Sound Effects (SFX)</div>
+                  <div class="setting-sub">Kicks, passes, tackles, goal chimes, whistles</div>
+                </div>
+                <div class="slider-control">
+                  <input type="range" id="sfxVolumeSlider" min="0" max="100" value="90" class="arcade-slider" />
+                  <span id="sfxVolumeVal" class="slider-val">90%</span>
+                </div>
+              </div>
+
+
+              <div class="setting-row" style="border-bottom: none; margin-top: 0.5rem;">
+                <div class="setting-info">
+                  <div class="setting-name">Mute All Sounds</div>
+                  <div class="setting-sub">Temporarily silence all game audio</div>
+                </div>
+                <button id="muteToggleBtn" class="arcade-btn">
+                  Mute Audio
+                </button>
+              </div>
+            </div>
+
+            <div class="modal-actions-footer">
+              <button id="doneSettingsBtn" class="arcade-btn btn-primary">Done</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 8. HOW TO PLAY & CONTROLS MODAL -->
+        <div id="helpModal" class="screen-overlay">
+          <div class="modal-card glass-panel help-card">
+            <div class="modal-header">
+              <h2>🎮 Controls & Gameplay Guide</h2>
+              <button id="closeHelpBtn" class="close-x-btn">✕</button>
+            </div>
+
+            <div class="help-body">
+              <div class="controls-grid">
+                <div class="control-card">
+                  <div class="control-keys">
+                    <span class="key-badge">W</span><span class="key-badge">A</span><span class="key-badge">S</span><span class="key-badge">D</span> / <span class="key-badge">Arrows</span>
+                  </div>
+                  <div class="control-desc">Move active player. Ball sticks close to feet with EAFC-style dribbling control!</div>
+                </div>
+
+                <div class="control-card">
+                  <div class="control-keys">
+                    <span class="key-badge">X</span> / <span class="key-badge">K</span>
+                  </div>
+                  <div class="control-desc">Ground Pass. Crisp pass targeting open teammate with instant auto-switch!</div>
+                </div>
+
+                <div class="control-card">
+                  <div class="control-keys">
+                    <span class="key-badge">Space</span> / <span class="key-badge">J</span>
+                  </div>
+                  <div class="control-desc">Shoot on offense (driven shot under crossbar) / Standing Tackle on defense to steal ball!</div>
+                </div>
+
+                <div class="control-card">
+                  <div class="control-keys">
+                    <span class="key-badge">Q</span>
+                  </div>
+                  <div class="control-desc">Manual Switch to other outfield teammate (DF or FW).</div>
+                </div>
+
+                <div class="control-card">
+                  <div class="control-keys">
+                    <span class="key-badge">C</span> / <span class="key-badge">Wheel</span>
+                  </div>
+                  <div class="control-desc">Toggle camera (Dynamic Follow vs Full Pitch) and adjust zoom.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="modal-actions-footer">
+              <button id="doneHelpBtn" class="arcade-btn btn-primary">Got it!</button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- Bottom Status & Controls Helper Bar -->
+      <footer class="arcade-footer">
+        <div>
+          <span>Controls: </span>
+          <span class="key-badge">WASD</span> Move
+          <span class="sep">·</span>
+          <span class="key-badge">X</span> Pass
+          <span class="sep">·</span>
+          <span class="key-badge">Space</span> Shoot / Tackle
+          <span class="sep">·</span>
+          <span class="key-badge">Q</span> Switch
+          <span class="sep">·</span>
+          <span class="key-badge">C</span> Camera
+        </div>
+      </footer>
+    </div>
+
+    <!-- Pure Vanilla JavaScript Entry Point -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "name": "Pocket Football League",
+  "description": "A browser-based 2.5D arcade 3v3 football game with smooth physics, miniature stadium, and vibrant arcade visuals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
