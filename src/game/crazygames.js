@@ -7,6 +7,8 @@ export class CrazyGamesBridge {
   constructor() {
     this.sdk = null;
     this.initialized = false;
+    this.initPromise = null;
+    this.loadListenerAttached = false;
     this.environment = 'disabled';
     this.isGameplayActive = false;
     this.isAdPlaying = false;
@@ -16,22 +18,37 @@ export class CrazyGamesBridge {
 
   async init() {
     if (this.initialized) return true;
-    if (typeof window === 'undefined' || !window.CrazyGames || !window.CrazyGames.SDK) {
+    if (this.initPromise) return this.initPromise;
+
+    if (typeof window === 'undefined') return false;
+    if (!window.CrazyGames || !window.CrazyGames.SDK) {
+      if (!this.loadListenerAttached && typeof window.addEventListener === 'function') {
+        this.loadListenerAttached = true;
+        window.addEventListener('load', () => {
+          this.init();
+        }, { once: true });
+      }
       return false;
     }
 
-    try {
-      this.sdk = window.CrazyGames.SDK;
-      await this.sdk.init();
-      this.environment = this.sdk.environment || 'crazygames';
-      this.initialized = true;
-      return true;
-    } catch (err) {
-      // Running offline, in preview sandbox, or SDK unavailable
-      this.initialized = false;
-      this.environment = 'disabled';
-      return false;
-    }
+    this.initPromise = (async () => {
+      try {
+        this.sdk = window.CrazyGames.SDK;
+        await this.sdk.init();
+        this.environment = this.sdk.environment || 'crazygames';
+        this.initialized = true;
+        return true;
+      } catch (err) {
+        // Running offline, in preview sandbox, or SDK unavailable
+        this.initialized = false;
+        this.environment = 'disabled';
+        return false;
+      } finally {
+        this.initPromise = null;
+      }
+    })();
+
+    return this.initPromise;
   }
 
   isAvailable() {
