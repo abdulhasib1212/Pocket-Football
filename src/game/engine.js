@@ -36,10 +36,11 @@ export class GameEngine {
     };
     this.audio = isSilent ? silentAudio : (options.audio || new AudioManager());
     this.isMenuIdle = !!options.isMenuIdle;
+    this.isLocalMultiplayer = !!options.isLocalMultiplayer;
     this.camera = new Camera(canvas);
     this.pitch = new Pitch();
     this.ball = new Ball();
-    this.input = new InputManager(canvas);
+    this.input = new InputManager(canvas, this.isLocalMultiplayer);
 
     // Team Setup
     this.homeTeam = Object.assign({}, options.homeTeam || TEAMS.waves, {
@@ -56,32 +57,47 @@ export class GameEngine {
 
     // Match Rules
     this.isKnockout = !!options.isKnockout;
+    this.difficulty = this.isLocalMultiplayer ? 'normal' : (options.difficulty || 'normal');
     this.isGoldenGoal = false;
     this.goldenGoalBannerTimer = 0;
 
     // Match State
     this.score = { blue: 0, red: 0 };
     this.matchDuration = options.duration || 180;
+    this.halfDuration = this.matchDuration / 2;
     this.matchTime = this.matchDuration;
+    this.currentHalf = 1;
+    this.hasHadHalfTime = false;
+    this.isHalfTime = false;
     this.isPaused = false;
     this.isFullTime = false;
+    this.touchHudActive = false;
+    this.possessionTime = { blue: 0, red: 0 };
 
     // Presentation States
     this.isKickoff = true;
     this.kickoffTimer = 1.8; // 1.8s pre-kickoff ready countdown
+    this.kickoffTeam = 'blue';
+    this.restartProtection = null;
     this.goalCelebrationTimer = 0;
     this.scoringTeam = null;
     this.lastScorer = null;
+    this.lastAssister = null;
 
-    // Shooting & Passing Power Bar State
+    // Shooting & Passing Power Bar State (P1 + P2)
     this.shotCharge = 0;
     this.isChargingShot = false;
     this.passCharge = 0;
     this.isChargingPass = false;
+    this.p2ShotCharge = 0;
+    this.p2IsChargingShot = false;
+    this.p2PassCharge = 0;
+    this.p2IsChargingPass = false;
 
     // Initialize 6 players (3v3)
     this.players = [];
     this.setupPlayers();
+    this.applyKickoffSetup(true);
 
     // Resize handler
     this.resize = this.resize.bind(this);
@@ -151,6 +167,7 @@ export class GameEngine {
         team: 'red',
         teamConfig: this.awayTeam,
         role: 'GK',
+        difficulty: this.difficulty,
         x: PITCH.WIDTH / 2 - 55,
         y: 0,
         isControlled: false,
@@ -162,6 +179,7 @@ export class GameEngine {
         team: 'red',
         teamConfig: this.awayTeam,
         role: 'DF',
+        difficulty: this.difficulty,
         x: 260,
         y: -110,
         isControlled: false,
@@ -173,62 +191,270 @@ export class GameEngine {
         team: 'red',
         teamConfig: this.awayTeam,
         role: 'FW',
+        difficulty: this.difficulty,
         x: 90,
         y: 40,
-        isControlled: false,
+        isControlled: this.isLocalMultiplayer,
+        controlledBy: this.isLocalMultiplayer ? 'p2' : null,
       }),
     ];
   }
 
-  getControlledPlayer() {
-    return this.players.find((p) => p.isControlled) || this.players[2];
+  setDifficulty(difficulty) {
+    this.difficulty = this.isLocalMultiplayer ? 'normal' : (difficulty || 'normal');
+    this.players.forEach((p) => {
+      if (p.team === 'red') {
+        p.difficulty = this.difficulty;
+      }
+    });
   }
 
-  switchControlledPlayer() {
-    // Switch between blue outfield players (DF and FW)
-    const blueOutfield = this.players.filter((p) => p.team === 'blue' && p.role !== 'GK');
-    const currentIdx = blueOutfield.findIndex((p) => p.isControlled);
-    const nextIdx = (currentIdx + 1) % blueOutfield.length;
-
+  setControlledForSlot(slot, targetPlayer, notify = true) {
+    if (!targetPlayer) return;
+    const team = slot === 'p2' ? 'red' : 'blue';
     this.players.forEach((p) => {
-      p.isControlled = false;
+      if (p.team === team) {
+        const active = (p === targetPlayer);
+        p.isControlled = active;
+        p.controlledBy = active ? slot : null;
+      }
     });
-    blueOutfield[nextIdx].isControlled = true;
-
-    if (this.uiHooks.onControlledPlayerChanged) {
-      this.uiHooks.onControlledPlayerChanged(blueOutfield[nextIdx]);
+    if (notify && this.uiHooks.onControlledPlayerChanged) {
+      this.uiHooks.onControlledPlayerChanged(targetPlayer, slot);
     }
   }
 
-  resetPositions(isNewKickoff = true) {
-    this.ball.reset(0, 0, 0);
-    this.players.forEach((p) => p.reset());
-    this.isChargingShot = false;
-    this.shotCharge = 0;
-    this.isChargingPass = false;
-    this.passCharge = 0;
+  getControlledPlayer(slot = 'p1') {
+    if (slot === 'p2') {
+      if (!this.isLocalMultiplayer) return null;
+      return (
+        this.players.find((p) => p.controlledBy === 'p2') ||
+        this.players.find((p) => p.team === 'red' && p.role === 'FW') ||
+        null
+      );
+    }
+    return (
+      this.players.find((p) => p.controlledBy === 'p1') ||
+      this.players.find((p) => p.team === 'blue' && p.isControlled) ||
+      this.players[2]
+    );
+  }
+
+  switchControlledPlayer(slot = 'p1') {
+    const team = slot === 'p2' ? 'red' : 'blue';
+    const outfield = this.players.filter((p) => p.team === team && p.role !== 'GK');
+    if (outfield.length === 0) return;
+    const currentIdx = outfield.findIndex((p) => p.controlledBy === slot || (slot === 'p1' && p.isControlled));
+    const nextIdx = (currentIdx + 1) % outfield.length;
+    this.setControlledForSlot(slot, outfield[nextIdx], true);
+  }
+
+  clearRestartProtection() {
+    this.restartProtection = null;
+    this.ball.isRestartProtected = false;
+  }
+
+  activateKickoffProtection(taker = null) {
+    const kickoffTaker = taker || this.players.find((p) => p.team === this.kickoffTeam && p.role === 'FW');
+    if (kickoffTaker && !kickoffTaker.isControlled) {
+      kickoffTaker.aiRestartTimer = 0.35;
+    }
+    this.restartProtection = {
+      type: 'KICKOFF',
+      team: this.kickoffTeam,
+      taker: kickoffTaker || null,
+      timer: 2.0,
+      centerRadius: PITCH.CENTER_CIRCLE_RADIUS + 14,
+    };
+    this.ball.isRestartProtected = true;
+  }
+
+  applyKickoffSetup(isInitial = false) {
+    const isBlueKickoff = this.kickoffTeam === 'blue';
+    const kickoffTaker = this.players.find((p) => p.team === this.kickoffTeam && p.role === 'FW');
+    const defendingFw = this.players.find((p) => p.team !== this.kickoffTeam && p.role === 'FW');
+
+    if (defendingFw) {
+      const minCenterX = PITCH.CENTER_CIRCLE_RADIUS + 26;
+      defendingFw.x = isBlueKickoff ? minCenterX : -minCenterX;
+      defendingFw.y = 0;
+      defendingFw.vx = 0;
+      defendingFw.vy = 0;
+    }
+
+    if (kickoffTaker) {
+      kickoffTaker.x = isBlueKickoff ? -16 : 16;
+      kickoffTaker.y = 0;
+      kickoffTaker.vx = 0;
+      kickoffTaker.vy = 0;
+      kickoffTaker.facingAngle = isBlueKickoff ? 0 : Math.PI;
+      this.ball.carrier = kickoffTaker;
+    }
+
+    if (!this.isMenuIdle) {
+      const blueFw = this.players.find((p) => p.team === 'blue' && p.role === 'FW');
+      if (blueFw) {
+        this.setControlledForSlot('p1', blueFw, !isInitial);
+      }
+      if (this.isLocalMultiplayer) {
+        const redFw = this.players.find((p) => p.team === 'red' && p.role === 'FW');
+        if (redFw) {
+          this.setControlledForSlot('p2', redFw, !isInitial);
+        }
+      }
+    }
 
     if (this.isMenuIdle) {
       this.isKickoff = false;
       this.kickoffTimer = 0;
+      this.activateKickoffProtection(kickoffTaker);
+      if (kickoffTaker) {
+        kickoffTaker.aiRestartTimer = 0.25;
+      }
+    } else {
+      this.ball.isRestartProtected = true;
+    }
+
+    return kickoffTaker;
+  }
+
+  enforceRestartProtection(dt) {
+    const p = this.restartProtection;
+    if (!p) return;
+
+    const ballLeftTaker = this.ball.carrier === null || (p.taker && this.ball.carrier !== p.taker);
+    const dribbledAway =
+      (p.type === 'KICKOFF' && Math.hypot(this.ball.x, this.ball.y) > 85) ||
+      (p.type === 'GOAL_KICK' &&
+        p.taker &&
+        (p.isBlue
+          ? p.taker.x > -PITCH.WIDTH / 2 + PITCH.PENALTY_AREA_DEPTH
+          : p.taker.x < PITCH.WIDTH / 2 - PITCH.PENALTY_AREA_DEPTH));
+    p.timer -= dt;
+
+    if (ballLeftTaker || dribbledAway || p.timer <= 0) {
+      this.clearRestartProtection();
+      return;
+    }
+
+    this.ball.isRestartProtected = true;
+
+    this.players.forEach((op) => {
+      if (op.team === p.team) return;
+
+      if (p.type === 'KICKOFF') {
+        const d = Math.hypot(op.x, op.y);
+        if (d < p.centerRadius) {
+          const nx = d > 0.001 ? op.x / d : (p.team === 'blue' ? 1 : -1);
+          const ny = d > 0.001 ? op.y / d : 0;
+          op.x = nx * p.centerRadius;
+          op.y = ny * p.centerRadius;
+          const radialVel = op.vx * nx + op.vy * ny;
+          if (radialVel < 0) {
+            op.vx -= radialVel * nx;
+            op.vy -= radialVel * ny;
+          }
+        }
+      } else if (p.type === 'GOAL_KICK') {
+        if (p.isBlue && op.x < p.minOpX) {
+          op.x = p.minOpX;
+          if (op.vx < 0) op.vx = 0;
+        } else if (!p.isBlue && op.x > p.minOpX) {
+          op.x = p.minOpX;
+          if (op.vx > 0) op.vx = 0;
+        }
+      }
+    });
+  }
+
+  resetPositions(isNewKickoff = true) {
+    this.clearRestartProtection();
+    this.ball.reset(0, 0, 0);
+    this.players.forEach((p) => p.reset());
+    this.lastAssister = null;
+    this.isChargingShot = false;
+    this.shotCharge = 0;
+    this.isChargingPass = false;
+    this.passCharge = 0;
+    this.p2IsChargingShot = false;
+    this.p2ShotCharge = 0;
+    this.p2IsChargingPass = false;
+    this.p2PassCharge = 0;
+
+    const kickoffTaker = this.applyKickoffSetup(false);
+    if (this.isMenuIdle) {
       return;
     }
 
     if (isNewKickoff) {
       this.isKickoff = true;
       this.kickoffTimer = 1.2;
+      this.ball.isRestartProtected = true;
+    } else {
+      this.activateKickoffProtection(kickoffTaker);
     }
     this.audio.playWhistle();
   }
 
+  getMatchStatsSummary() {
+    const shots = { blue: 0, red: 0 };
+    const passes = { blue: 0, red: 0 };
+    const assists = { blue: 0, red: 0 };
+    const tackles = { blue: 0, red: 0 };
+
+    this.players.forEach((p) => {
+      if (!p.stats) return;
+      if (p.team === 'blue' || p.team === 'red') {
+        shots[p.team] += p.stats.shots || 0;
+        passes[p.team] += p.stats.passes || 0;
+        assists[p.team] += p.stats.assists || 0;
+        tackles[p.team] += p.stats.tackles || 0;
+      }
+    });
+
+    const totalPoss = (this.possessionTime.blue || 0) + (this.possessionTime.red || 0);
+    const bluePossPct = totalPoss > 0.2 ? Math.round((this.possessionTime.blue / totalPoss) * 100) : 50;
+    const redPossPct = 100 - bluePossPct;
+
+    return {
+      shots,
+      passes,
+      assists,
+      tackles,
+      possession: { blue: bluePossPct, red: redPossPct },
+    };
+  }
+
+  startSecondHalf() {
+    this.isHalfTime = false;
+    this.currentHalf = 2;
+    this.kickoffTeam = 'red';
+    this.setPaused(false);
+    this.resetPositions(true);
+
+    if (this.uiHooks.onTimeUpdated) {
+      this.uiHooks.onTimeUpdated(this.matchTime, { half: this.currentHalf, isGoldenGoal: false });
+    }
+    if (this.uiHooks.onSecondHalfStarted) {
+      this.uiHooks.onSecondHalfStarted();
+    }
+  }
+
   startGoldenGoalExtraTime() {
     this.isGoldenGoal = true;
+    this.hasHadHalfTime = true;
+    this.isHalfTime = false;
+    this.currentHalf = 3;
     this.goldenGoalBannerTimer = 3.0;
     this.matchTime = 60; // 1 minute of Golden Goal
     this.isFullTime = false;
+    this.kickoffTeam = 'blue';
     this.audio.playWhistle();
     this.resetPositions(true);
 
+    if (this.uiHooks.onTimeUpdated) {
+      this.uiHooks.onTimeUpdated(this.matchTime, { half: this.currentHalf, isGoldenGoal: true });
+    }
     if (this.uiHooks.onGoldenGoalStarted) {
       this.uiHooks.onGoldenGoalStarted();
     }
@@ -236,15 +462,16 @@ export class GameEngine {
 
   handleGoal(scoringTeamId) {
     if (this.isMenuIdle) {
-      // Menu background: seamless ball reset, completely silent, no popups or freezes
-      this.ball.reset(0, 0, 0);
-      this.players.forEach((p) => p.reset());
+      // Menu background: seamless kickoff reset for conceding team, completely silent
+      this.kickoffTeam = scoringTeamId === 'blue' ? 'red' : 'blue';
+      this.resetPositions(false);
       return;
     }
 
     if (this.goalCelebrationTimer > 0 || this.isFullTime) return; // Prevent multiple counts
     this.score[scoringTeamId] += 1;
     this.scoringTeam = scoringTeamId;
+    this.kickoffTeam = scoringTeamId === 'blue' ? 'red' : 'blue';
     this.goalCelebrationTimer = 2.8; // 2.8 seconds celebratory replay pause
 
     // Reset power charging
@@ -252,6 +479,10 @@ export class GameEngine {
     this.shotCharge = 0;
     this.isChargingPass = false;
     this.passCharge = 0;
+    this.p2IsChargingShot = false;
+    this.p2ShotCharge = 0;
+    this.p2IsChargingPass = false;
+    this.p2PassCharge = 0;
 
     // Determine scorer
     let scorer = null;
@@ -266,17 +497,34 @@ export class GameEngine {
       scorer.stats.goals = (scorer.stats.goals || 0) + 1;
     }
 
+    // Determine assister from recent completed pass by teammate
+    let assister = null;
+    if (
+      this.ball.lastPassInfo &&
+      this.ball.lastPassInfo.team === scoringTeamId &&
+      this.ball.lastPassInfo.passer &&
+      this.ball.lastPassInfo.passer !== scorer
+    ) {
+      assister = this.ball.lastPassInfo.passer;
+      if (assister.stats) {
+        assister.stats.assists = (assister.stats.assists || 0) + 1;
+      }
+    }
+    this.lastAssister = assister;
+    this.ball.lastPassInfo = null;
+
     this.audio.playGoalChime();
     this.audio.playWhistle();
 
     if (this.uiHooks.onScoreChanged) {
-      this.uiHooks.onScoreChanged(this.score, scoringTeamId, scorer);
+      this.uiHooks.onScoreChanged(this.score, scoringTeamId, scorer, assister);
     }
     if (this.uiHooks.onGoal) {
       this.uiHooks.onGoal({
         scoringTeam: scoringTeamId,
         teamInfo: scoringTeamId === 'blue' ? this.homeTeam : this.awayTeam,
         scorer: scorer,
+        assister: assister,
         score: Object.assign({}, this.score)
       });
     }
@@ -294,7 +542,9 @@ export class GameEngine {
             winner: scoringTeamId,
             isGoldenGoalWin: true,
             scorer: scorer,
+            assister: assister,
             players: this.players,
+            stats: this.getMatchStatsSummary(),
             mvp: this.calculateMatchMVP(scoringTeamId)
           });
         }, 2800);
@@ -304,21 +554,80 @@ export class GameEngine {
 
   handleGoalKick(defendingTeam) {
     if (this.goalCelebrationTimer > 0 || this.isFullTime) return;
+    this.clearRestartProtection();
+    this.isChargingShot = false;
+    this.shotCharge = 0;
+    this.isChargingPass = false;
+    this.passCharge = 0;
+    this.p2IsChargingShot = false;
+    this.p2ShotCharge = 0;
+    this.p2IsChargingPass = false;
+    this.p2PassCharge = 0;
+
     const isBlue = defendingTeam === 'blue';
-    const restartX = isBlue ? -PITCH.WIDTH / 2 + 100 : PITCH.WIDTH / 2 - 100;
+    const isHumanKick = !this.isMenuIdle && (isBlue || this.isLocalMultiplayer);
+    const restartX = isBlue ? -PITCH.WIDTH / 2 + 80 : PITCH.WIDTH / 2 - 80;
     this.ball.reset(restartX, 0, 0);
     if (!this.isMenuIdle) {
       this.audio.playWhistle();
     }
 
-    // Position defending GK to restart play
+    // Position defending GK cleanly with the ball to take the goal kick
     const gk = this.players.find((p) => p.team === defendingTeam && p.role === 'GK');
     if (gk) {
-      gk.x = restartX + (isBlue ? -30 : 30);
+      gk.x = restartX + (isBlue ? -18 : 18);
       gk.y = 0;
       gk.vx = 0;
       gk.vy = 0;
+      gk.facingAngle = isBlue ? 0 : Math.PI;
+      gk.isStumbled = false;
+      gk.stumbleTimer = 0;
+      gk.kickCooldown = 0;
+      gk.isTackling = false;
+      gk.tackleTimer = 0;
+      gk.possessionTimer = 0;
+      gk.aiRestartTimer = isHumanKick ? 0 : (this.isMenuIdle ? 0.2 : 0.48);
+      this.ball.carrier = gk;
+
+      // Hand control to P1 (Blue GK) or P2 (Red GK in 2P mode) on their goal kick!
+      if (isHumanKick) {
+        this.setControlledForSlot(isBlue ? 'p1' : 'p2', gk, true);
+      }
     }
+
+    // Give teammates open lanes outside the 6-yard box and force opponents outside the penalty box
+    const minMateX = isBlue ? -PITCH.WIDTH / 2 + 205 : PITCH.WIDTH / 2 - 205;
+    const minOpX = isBlue
+      ? -PITCH.WIDTH / 2 + PITCH.PENALTY_AREA_DEPTH + 45
+      : PITCH.WIDTH / 2 - PITCH.PENALTY_AREA_DEPTH - 45;
+
+    this.players.forEach((p) => {
+      if (p.role === 'GK') return;
+      p.isTackling = false;
+      p.tackleTimer = 0;
+      p.vx = 0;
+      p.vy = 0;
+
+      if (p.team === defendingTeam) {
+        if ((isBlue && p.x < minMateX) || (!isBlue && p.x > minMateX)) {
+          p.x = minMateX;
+        }
+      } else {
+        if ((isBlue && p.x < minOpX) || (!isBlue && p.x > minOpX)) {
+          p.x = minOpX;
+        }
+      }
+    });
+
+    this.restartProtection = {
+      type: 'GOAL_KICK',
+      team: defendingTeam,
+      taker: gk || null,
+      timer: this.isMenuIdle ? 0.9 : (isBlue ? 4.0 : 1.8),
+      minOpX,
+      isBlue,
+    };
+    this.ball.isRestartProtected = true;
   }
 
   calculateMatchMVP(winnerKey) {
@@ -330,14 +639,16 @@ export class GameEngine {
     this.players.forEach((p) => {
       const isWinner = winnerKey ? p.team === winnerKey : false;
       const goals = p.stats ? p.stats.goals || 0 : 0;
+      const assists = p.stats ? p.stats.assists || 0 : 0;
       const tackles = p.stats ? p.stats.tackles || 0 : 0;
       const passes = p.stats ? p.stats.passes || 0 : 0;
       const shots = p.stats ? p.stats.shots || 0 : 0;
 
       // Base rating
       let rating = 6.2;
-      // High-impact goals (+1.5 per goal)
+      // High-impact goals (+1.5 per goal) & assists (+1.1 per assist)
       rating += goals * 1.5;
+      rating += assists * 1.1;
       // High-impact tackles won (+0.8 per tackle)
       rating += tackles * 0.8;
       // Passes completed (+0.12 per pass)
@@ -356,7 +667,7 @@ export class GameEngine {
       if (isWinner) rating += 0.6;
 
       // Human user controlled subtle pride boost if contributed
-      if (p.isControlled && (goals > 0 || tackles > 0)) {
+      if (p.isControlled && (goals > 0 || assists > 0 || tackles > 0)) {
         rating += 0.2;
       }
 
@@ -364,8 +675,8 @@ export class GameEngine {
       rating = Math.min(10.0, Math.max(6.0, Math.round(rating * 10) / 10));
       p.rating = rating;
 
-      // Selection weight prioritizing: Goals, Tackles, Rating, Winner
-      const weight = (goals * 200) + (tackles * 90) + (rating * 20) + (passes * 5) + (isWinner ? 25 : 0);
+      // Selection weight prioritizing: Goals, Assists, Tackles, Rating, Winner
+      const weight = (goals * 200) + (assists * 130) + (tackles * 90) + (rating * 20) + (passes * 5) + (isWinner ? 25 : 0);
       if (weight > highestScoreWeight) {
         highestScoreWeight = weight;
         bestPlayer = p;
@@ -374,20 +685,27 @@ export class GameEngine {
 
     const chosen = bestPlayer || this.players[0];
 
-    // Generate narrative summary based on actual goals & tackles
+    // Generate narrative summary based on actual goals, assists & tackles
     let narrative = '';
     const g = chosen.stats ? chosen.stats.goals || 0 : 0;
+    const a = chosen.stats ? chosen.stats.assists || 0 : 0;
     const t = chosen.stats ? chosen.stats.tackles || 0 : 0;
     const p = chosen.stats ? chosen.stats.passes || 0 : 0;
 
-    if (g >= 2 && t >= 2) {
+    if (g >= 1 && a >= 1) {
+      narrative = `Complete attacking maestro: contributed ${g} goal${g > 1 ? 's' : ''} and ${a} assist${a > 1 ? 's' : ''} in a standout display!`;
+    } else if (g >= 2 && t >= 2) {
       narrative = `Sensational all-round masterclass: bagged ${g} goals and executed ${t} clutch tackles!`;
     } else if (g >= 2) {
       narrative = `Lethal finishing display with ${g} match-defining goals to lead the attack.`;
+    } else if (a >= 2) {
+      narrative = `Visionary playmaker: unlocked the defense with ${a} decisive assists and ${p} passes!`;
     } else if (g === 1 && t >= 2) {
       narrative = `Decisive matchwinner: scored the crucial goal while winning ${t} vital tackles.`;
     } else if (g === 1) {
       narrative = `Clinched the breakthrough goal with dynamic forward pressure and ${p} passes.`;
+    } else if (a === 1) {
+      narrative = `Engineered the breakthrough with 1 key assist, ${p} passes, and sharp off-ball vision.`;
     } else if (t >= 3) {
       narrative = `Defensive colossus: shut down opponents with ${t} bone-crunching tackles!`;
     } else if (t >= 1) {
@@ -430,6 +748,29 @@ export class GameEngine {
     }
   }
 
+  setPaused(paused) {
+    this.isPaused = !!paused;
+    if (this.isPaused) {
+      this.isChargingShot = false;
+      this.shotCharge = 0;
+      this.isChargingPass = false;
+      this.passCharge = 0;
+      this.p2IsChargingShot = false;
+      this.p2ShotCharge = 0;
+      this.p2IsChargingPass = false;
+      this.p2PassCharge = 0;
+      if (this.input && this.input.clearActiveInputs) {
+        this.input.clearActiveInputs();
+      }
+    } else {
+      this.lastTime = performance.now();
+    }
+  }
+
+  setTouchHudActive(active) {
+    this.touchHudActive = !!active;
+  }
+
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
@@ -439,6 +780,10 @@ export class GameEngine {
 
   stop() {
     this.isRunning = false;
+    window.removeEventListener('resize', this.resize);
+    if (this.input && this.input.destroy) {
+      this.input.destroy();
+    }
   }
 
   loop(currentTime) {
@@ -450,7 +795,9 @@ export class GameEngine {
     // Clamp dt to avoid huge simulation jumps when tab is in background
     if (dt > 0.1) dt = 0.1;
 
-    this.update(dt);
+    if (!this.isPaused) {
+      this.update(dt);
+    }
     this.render();
 
     requestAnimationFrame(this.loop);
@@ -459,9 +806,11 @@ export class GameEngine {
   update(dt) {
     // 0. Kick-off countdown
     if (this.isKickoff) {
+      this.ball.isRestartProtected = true;
       this.kickoffTimer -= dt;
       if (this.kickoffTimer <= 0) {
         this.isKickoff = false;
+        this.activateKickoffProtection();
         this.audio.playWhistle();
       }
     }
@@ -471,8 +820,11 @@ export class GameEngine {
     }
 
     // Check manual utility inputs
-    if (this.input.consumeSwitch()) {
-      this.switchControlledPlayer();
+    if (this.input.consumeSwitch('p1')) {
+      this.switchControlledPlayer('p1');
+    }
+    if (this.isLocalMultiplayer && this.input.consumeSwitch('p2')) {
+      this.switchControlledPlayer('p2');
     }
     if (this.input.consumeReset()) {
       this.resetPositions(true);
@@ -484,79 +836,31 @@ export class GameEngine {
       }
     }
 
-    const controlled = this.getControlledPlayer();
-    const moveDir = (!this.isKickoff && !this.isFullTime) ? this.input.getMovementVector() : { x: 0, y: 0 };
-    const hasBall = (this.ball.carrier === controlled);
+    const controlled = this.getControlledPlayer('p1');
+    const controlledP2 = this.isLocalMultiplayer ? this.getControlledPlayer('p2') : null;
+    const moveDir = (!this.isKickoff && !this.isFullTime && !this.isMenuIdle)
+      ? this.input.getMovementVector('p1')
+      : { x: 0, y: 0 };
+    const moveDirP2 = (!this.isKickoff && !this.isFullTime && !this.isMenuIdle && this.isLocalMultiplayer)
+      ? this.input.getMovementVector('p2')
+      : { x: 0, y: 0 };
 
-    // --- SHOOTING POWER CHARGE LOGIC (Space / Key J) ---
-    if (!this.isKickoff && !this.isFullTime && controlled) {
-      if (hasBall) {
-        // Player possesses the ball: hold to charge shot power, release to fire!
-        if (this.input.isKickHeld()) {
-          this.isChargingShot = true;
-          this.shotCharge = Math.min(1.0, this.shotCharge + dt * 1.5); // Charges 0 to 100% in ~0.66s
-        } else if (this.isChargingShot) {
-          // Key released! Execute driven shot with power scaled by charge!
-          const kickX = moveDir.x !== 0 ? moveDir.x : Math.cos(controlled.facingAngle);
-          const kickY = moveDir.y !== 0 ? moveDir.y : Math.sin(controlled.facingAngle);
-
-          const minPower = 340;
-          const maxPower = 640;
-          const power = minPower + this.shotCharge * (maxPower - minPower);
-          const height = 15 + this.shotCharge * 30;
-
-          const success = controlled.performKick(this.ball, kickX, kickY, power, height);
-          if (success) {
-            this.audio.playShoot(this.shotCharge);
-          }
-          this.isChargingShot = false;
-          this.shotCharge = 0;
-        }
-      } else {
-        // Defending: Instant standing tackle upon pressing Space/J!
-        this.isChargingShot = false;
-        this.shotCharge = 0;
-        if (this.input.consumeKick()) {
-          const success = controlled.performTackle(this.ball, this.players, this.audio);
-          if (!success) {
-            this.audio.playTackle();
-          }
-        }
+    if (!this.isKickoff && !this.isFullTime && !this.isMenuIdle) {
+      if (controlled) {
+        this.processHumanPlayerActions(controlled, 'p1', moveDir, dt);
       }
+      if (controlledP2) {
+        this.processHumanPlayerActions(controlledP2, 'p2', moveDirP2, dt);
+      }
+    }
 
-      // --- PASSING POWER CHARGE LOGIC (Key X / Key K) ---
-      if (hasBall) {
-        if (this.input.isPassHeld()) {
-          this.isChargingPass = true;
-          this.passCharge = Math.min(1.0, this.passCharge + dt * 2.2); // Charges in ~0.45s
-        } else if (this.isChargingPass) {
-          // Key released! Execute pass with power scaled by charge!
-          const minPass = 280;
-          const maxPass = 540;
-          const power = minPass + this.passCharge * (maxPass - minPass);
-
-          const passTarget = controlled.findBestPassTarget(this.players, moveDir);
-          if (passTarget) {
-            const passed = controlled.performPass(this.ball, passTarget, power);
-            if (passed) {
-              this.audio.playPass();
-              if (passTarget.role !== 'GK') {
-                this.players.forEach((p) => {
-                  p.isControlled = false;
-                });
-                passTarget.isControlled = true;
-                if (this.uiHooks.onControlledPlayerChanged) {
-                  this.uiHooks.onControlledPlayerChanged(passTarget);
-                }
-              }
-            }
-          }
-          this.isChargingPass = false;
-          this.passCharge = 0;
-        }
-      } else {
-        this.isChargingPass = false;
-        this.passCharge = 0;
+    // Track live possession share across open play (carried ball + in-flight passes/kicks)
+    if (!this.isKickoff && !this.isFullTime && !this.isHalfTime && !this.isMenuIdle && this.goalCelebrationTimer <= 0) {
+      const activeTeam =
+        this.ball.carrier?.team ||
+        (!this.ball.isRestartProtected ? this.ball.lastKickedBy?.team : null);
+      if (activeTeam === 'blue' || activeTeam === 'red') {
+        this.possessionTime[activeTeam] += dt;
       }
     }
 
@@ -566,11 +870,34 @@ export class GameEngine {
       if (this.goalCelebrationTimer <= 0) {
         this.resetPositions(true);
       }
-    } else if (!this.isFullTime && !this.isMenuIdle) {
+    } else if (!this.isFullTime && !this.isHalfTime && !this.isMenuIdle) {
       // Match clock ticking
       this.matchTime = Math.max(0, this.matchTime - dt);
+
+      // Check Half Time at 50% match duration
+      if (!this.hasHadHalfTime && !this.isGoldenGoal && this.currentHalf === 1 && this.matchTime <= this.halfDuration) {
+        this.matchTime = this.halfDuration;
+        this.hasHadHalfTime = true;
+        this.isHalfTime = true;
+        this.setPaused(true);
+        this.audio.playWhistle();
+        if (this.uiHooks.onTimeUpdated) {
+          this.uiHooks.onTimeUpdated(this.matchTime, { half: this.currentHalf, isGoldenGoal: false });
+        }
+        if (this.uiHooks.onHalfTime) {
+          this.uiHooks.onHalfTime({
+            score: Object.assign({}, this.score),
+            homeTeam: this.homeTeam,
+            awayTeam: this.awayTeam,
+            matchTime: this.matchTime,
+            stats: this.getMatchStatsSummary(),
+          });
+        }
+        return;
+      }
+
       if (this.uiHooks.onTimeUpdated) {
-        this.uiHooks.onTimeUpdated(this.matchTime);
+        this.uiHooks.onTimeUpdated(this.matchTime, { half: this.currentHalf, isGoldenGoal: this.isGoldenGoal });
       }
 
       // Check Full Time (when clock reaches 00:00)
@@ -601,6 +928,7 @@ export class GameEngine {
                   isPenaltyShootout: true,
                   penalties: { home: pHome, away: pAway },
                   players: this.players,
+                  stats: this.getMatchStatsSummary(),
                   mvp: this.calculateMatchMVP(winnerKey)
                 });
               }
@@ -618,6 +946,7 @@ export class GameEngine {
                 winner: null,
                 isDraw: true,
                 players: this.players,
+                stats: this.getMatchStatsSummary(),
                 mvp: this.calculateMatchMVP(null)
               });
             }
@@ -636,6 +965,7 @@ export class GameEngine {
               winner: winner,
               isDraw: false,
               players: this.players,
+              stats: this.getMatchStatsSummary(),
               mvp: this.calculateMatchMVP(winner)
             });
           }
@@ -647,15 +977,29 @@ export class GameEngine {
     this.pitch.update(dt);
 
     // 2. Update all 6 players (frozen during kickoff countdown)
-    const effectiveMoveDir = this.isKickoff ? { x: 0, y: 0 } : moveDir;
+    const effectiveMoveP1 = this.isKickoff ? { x: 0, y: 0 } : moveDir;
+    const effectiveMoveP2 = this.isKickoff ? { x: 0, y: 0 } : moveDirP2;
     this.players.forEach((player) => {
+      let playerInput = null;
+      if (!this.isMenuIdle) {
+        if (player.controlledBy === 'p1' || (!this.isLocalMultiplayer && player.isControlled)) {
+          playerInput = effectiveMoveP1;
+        } else if (this.isLocalMultiplayer && player.controlledBy === 'p2') {
+          playerInput = effectiveMoveP2;
+        }
+      }
       player.update(
         dt,
-        player.isControlled ? effectiveMoveDir : null,
+        playerInput,
         this.isKickoff ? null : this.ball,
         this.players
       );
     });
+
+    // Enforce restart exclusion & possession protection before ball & collision resolution
+    if (!this.isKickoff && this.restartProtection) {
+      this.enforceRestartProtection(dt);
+    }
 
     // 3. Update football
     if (!this.isKickoff) {
@@ -670,42 +1014,172 @@ export class GameEngine {
       PhysicsSystem.resolveCollisions(this.players, this.ball, this.audio);
     }
 
-    // 5. Update 2.5D camera smoothly tracking action
-    this.camera.update(controlled, this.ball, dt);
+    // 5. Update 2.5D camera smoothly tracking action (frames both P1 & P2 in Local 2P)
+    this.camera.update(controlled, this.ball, dt, controlledP2);
 
-    // 6. EAFC Auto-Switch to closest teammate when defending or ball is loose
-    if (!this.isKickoff && !this.isFullTime) {
+    // 6. Auto-Switch to closest teammate / GK on incoming shots
+    if (!this.isKickoff && !this.isFullTime && !this.isMenuIdle) {
       this.checkAutoSwitch();
     }
   }
 
-  checkAutoSwitch() {
-    const controlled = this.getControlledPlayer();
+  processHumanPlayerActions(player, slot, moveDir, dt) {
+    const isP2 = slot === 'p2';
+    const hasBall = (this.ball.carrier === player);
+    const distToBall = Math.hypot(this.ball.x - player.x, this.ball.y - player.y);
+    const canOneTouchShoot =
+      !this.ball.carrier &&
+      !this.ball.isRestartProtected &&
+      distToBall <= player.radius + this.ball.radius + 20 &&
+      this.ball.z <= PHYSICS.PLAYER_HEIGHT + 10;
+    const canShoot = hasBall || canOneTouchShoot;
+
+    const getShotCharging = () => (isP2 ? this.p2IsChargingShot : this.isChargingShot);
+    const setShotCharging = (v) => {
+      if (isP2) this.p2IsChargingShot = v;
+      else this.isChargingShot = v;
+    };
+    const getShotCharge = () => (isP2 ? this.p2ShotCharge : this.shotCharge);
+    const setShotCharge = (v) => {
+      if (isP2) this.p2ShotCharge = v;
+      else this.shotCharge = v;
+    };
+
+    const getPassCharging = () => (isP2 ? this.p2IsChargingPass : this.isChargingPass);
+    const setPassCharging = (v) => {
+      if (isP2) this.p2IsChargingPass = v;
+      else this.isChargingPass = v;
+    };
+    const getPassCharge = () => (isP2 ? this.p2PassCharge : this.passCharge);
+    const setPassCharge = (v) => {
+      if (isP2) this.p2PassCharge = v;
+      else this.passCharge = v;
+    };
+
+    // --- ASSISTED SHOOTING / TACKLE ---
+    if (canShoot) {
+      if (this.input.isKickHeld(slot)) {
+        setShotCharging(true);
+        setShotCharge(Math.min(1.0, getShotCharge() + dt * 1.65));
+        this.input.consumeKick(slot);
+      } else if (getShotCharging() || this.input.consumeKick(slot)) {
+        const effectiveCharge = getShotCharging() ? getShotCharge() : 0.38;
+        const shotDir = this.computeAssistedShotDirection(player, moveDir);
+
+        const minPower = 390;
+        const maxPower = 660;
+        const power = minPower + effectiveCharge * (maxPower - minPower);
+        const height = 75 + effectiveCharge * 115;
+
+        const success = player.performKick(this.ball, shotDir.x, shotDir.y, power, height);
+        if (success) {
+          this.audio.playShoot(effectiveCharge);
+        }
+        setShotCharging(false);
+        setShotCharge(0);
+      }
+    } else {
+      setShotCharging(false);
+      setShotCharge(0);
+      if (this.input.consumeKick(slot)) {
+        const success = player.performTackle(this.ball, this.players, this.audio);
+        if (!success) {
+          this.audio.playTackle();
+        }
+      }
+    }
+
+    // --- PASSING ---
+    if (hasBall) {
+      if (this.input.isPassHeld(slot)) {
+        setPassCharging(true);
+        setPassCharge(Math.min(1.0, getPassCharge() + dt * 2.2));
+        this.input.consumePass(slot);
+      } else if (getPassCharging() || this.input.consumePass(slot)) {
+        const effectivePassCharge = getPassCharging() ? getPassCharge() : 0.35;
+        const minPass = 280;
+        const maxPass = 540;
+        const power = minPass + effectivePassCharge * (maxPass - minPass);
+
+        const passTarget = player.findBestPassTarget(this.players, moveDir);
+        if (passTarget) {
+          const passed = player.performPass(this.ball, passTarget, power);
+          if (passed) {
+            this.audio.playPass();
+            if (passTarget.role !== 'GK') {
+              this.setControlledForSlot(slot, passTarget, true);
+            }
+          }
+        }
+        setPassCharging(false);
+        setPassCharge(0);
+      }
+    } else {
+      setPassCharging(false);
+      setPassCharge(0);
+    }
+  }
+
+  isIncomingShotToGoal(team) {
+    if (this.ball.carrier) return false;
+    if (this.ball.shotAtGoalTeam === team) return true;
+    const isBlue = team === 'blue';
+    const oppTeam = isBlue ? 'red' : 'blue';
+    const goalX = isBlue ? -PITCH.WIDTH / 2 : PITCH.WIDTH / 2;
+    const movingTowardGoal = isBlue ? (this.ball.vx < -160 && this.ball.x < -80) : (this.ball.vx > 160 && this.ball.x > 80);
+    if (movingTowardGoal && this.ball.lastKickedBy?.team === oppTeam) {
+      const t = (goalX - this.ball.x) / this.ball.vx;
+      if (t > 0) {
+        const projY = this.ball.y + this.ball.vy * t;
+        if (Math.abs(projY) <= PITCH.GOAL_WIDTH * 1.15) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  isIncomingShotToBlueGoal() {
+    return this.isIncomingShotToGoal('blue');
+  }
+
+  checkTeamAutoSwitch(team, slot) {
+    const controlled = this.getControlledPlayer(slot);
     if (!controlled || controlled.isStumbled) return;
 
-    // Do NOT auto-switch if user is actively carrying/dribbling the ball
-    if (this.ball.carrier === controlled) return;
+    const isBlue = team === 'blue';
+    const gk = this.players.find((p) => p.team === team && p.role === 'GK');
+    const outfield = this.players.filter((p) => p.team === team && p.role !== 'GK');
+    if (outfield.length === 0) return;
 
-    const blueOutfield = this.players.filter((p) => p.team === 'blue' && p.role !== 'GK');
-    if (blueOutfield.length === 0) return;
+    const incomingShot = this.isIncomingShotToGoal(team);
 
-    // If another blue teammate intercepted or won the ball, immediately give control to that teammate!
-    if (this.ball.carrier && this.ball.carrier.team === 'blue' && this.ball.carrier !== controlled) {
-      this.players.forEach((p) => {
-        p.isControlled = false;
-      });
-      this.ball.carrier.isControlled = true;
-      if (this.uiHooks.onControlledPlayerChanged) {
-        this.uiHooks.onControlledPlayerChanged(this.ball.carrier);
+    // 1. Give/keep control of GK on goal kicks, saves, or incoming shots
+    if (gk && (this.ball.carrier === gk || incomingShot)) {
+      if (controlled !== gk) {
+        this.setControlledForSlot(slot, gk, true);
       }
       return;
     }
 
-    // When defending or ball is loose, auto-switch to closest blue player
-    let closest = controlled;
-    let minDist = Math.hypot(controlled.x - this.ball.x, controlled.y - this.ball.y);
+    // Do NOT auto-switch if actively carrying/dribbling
+    if (this.ball.carrier === controlled) return;
 
-    blueOutfield.forEach((p) => {
+    // 2. If another outfield teammate won/intercepted the ball, switch to them
+    if (
+      this.ball.carrier &&
+      this.ball.carrier.team === team &&
+      this.ball.carrier.role !== 'GK' &&
+      this.ball.carrier !== controlled
+    ) {
+      this.setControlledForSlot(slot, this.ball.carrier, true);
+      return;
+    }
+
+    // Closest outfield player to the ball
+    let closest = outfield[0];
+    let minDist = Math.hypot(closest.x - this.ball.x, closest.y - this.ball.y);
+    outfield.forEach((p) => {
       const dist = Math.hypot(p.x - this.ball.x, p.y - this.ball.y);
       if (dist < minDist) {
         minDist = dist;
@@ -713,16 +1187,104 @@ export class GameEngine {
       }
     });
 
+    // 3. Return from GK to closest outfield player once threat/clearance resolves
+    if (controlled.role === 'GK') {
+      const distFromGk = Math.hypot(controlled.x - this.ball.x, controlled.y - this.ball.y);
+      const clearedPenaltyBox = isBlue
+        ? (this.ball.x > -PITCH.WIDTH / 2 + PITCH.PENALTY_AREA_DEPTH)
+        : (this.ball.x < PITCH.WIDTH / 2 - PITCH.PENALTY_AREA_DEPTH);
+      if (this.ball.carrier || clearedPenaltyBox || distFromGk > 130) {
+        this.setControlledForSlot(slot, closest, true);
+      }
+      return;
+    }
+
+    // 4. Auto-switch when defending or loose ball
     const currentDist = Math.hypot(controlled.x - this.ball.x, controlled.y - this.ball.y);
     if (closest !== controlled && minDist < currentDist - 65) {
-      this.players.forEach((p) => {
-        p.isControlled = false;
-      });
-      closest.isControlled = true;
-      if (this.uiHooks.onControlledPlayerChanged) {
-        this.uiHooks.onControlledPlayerChanged(closest);
-      }
+      this.setControlledForSlot(slot, closest, true);
     }
+  }
+
+  checkAutoSwitch() {
+    this.checkTeamAutoSwitch('blue', 'p1');
+    if (this.isLocalMultiplayer) {
+      this.checkTeamAutoSwitch('red', 'p2');
+    }
+  }
+
+  renderPassTargetIndicator(ctx, controlled, slot) {
+    if (!controlled || this.isKickoff || this.isFullTime) return;
+    const distToBall = Math.hypot(this.ball.x - controlled.x, this.ball.y - controlled.y);
+    if (distToBall >= controlled.radius + this.ball.radius + 35 || this.ball.z > 35) return;
+    const moveDir = this.input.getMovementVector(slot);
+    const target = controlled.findBestPassTarget(this.players, moveDir);
+    if (!target || target.role === 'GK') return;
+
+    const tPos = this.camera.worldToScreen(target.x, target.y, 0);
+    const isP2 = slot === 'p2';
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(
+      tPos.x,
+      tPos.y,
+      (target.radius + 7) * this.camera.zoom,
+      (target.radius + 3.5) * this.camera.zoom * 0.72,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.strokeStyle = isP2 ? 'rgba(34, 211, 238, 0.85)' : 'rgba(45, 212, 191, 0.85)';
+    ctx.lineWidth = 1.8 * this.camera.zoom;
+    ctx.setLineDash([5, 4]);
+    ctx.stroke();
+
+    if (this.camera.zoom > 0.7) {
+      ctx.fillStyle = isP2 ? '#22D3EE' : '#2DD4BF';
+      ctx.font = `bold ${Math.round(8.5 * this.camera.zoom)}px 'Trebuchet MS', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(isP2 ? 'PASS [K]' : 'PASS [X]', tPos.x, tPos.y + 15 * this.camera.zoom);
+    }
+    ctx.restore();
+  }
+
+  renderShotAimGuide(ctx, controlled, slot) {
+    const isCharging = slot === 'p2' ? this.p2IsChargingShot : this.isChargingShot;
+    if (!controlled || !isCharging || this.isKickoff || this.isFullTime) return;
+    const moveDir = this.input.getMovementVector(slot);
+    const shotDir = this.computeAssistedShotDirection(controlled, moveDir);
+    if (!shotDir.isAssisted) return;
+
+    const startPos = this.camera.worldToScreen(this.ball.x, this.ball.y, 0);
+    const targetPos = this.camera.worldToScreen(shotDir.targetX, shotDir.targetY, 0);
+    const guideLen = 115;
+    const midPos = this.camera.worldToScreen(
+      this.ball.x + shotDir.x * guideLen,
+      this.ball.y + shotDir.y * guideLen,
+      0
+    );
+    const rgba0 = slot === 'p2' ? 'rgba(34, 211, 238, 0.85)' : 'rgba(250, 204, 21, 0.85)';
+    const rgbaEnd = slot === 'p2' ? 'rgba(34, 211, 238, 0)' : 'rgba(250, 204, 21, 0)';
+
+    ctx.save();
+    const grad = ctx.createLinearGradient(startPos.x, startPos.y, midPos.x, midPos.y);
+    grad.addColorStop(0, rgba0);
+    grad.addColorStop(1, rgbaEnd);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = Math.max(2, 2.5 * this.camera.zoom);
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(startPos.x, startPos.y);
+    ctx.lineTo(midPos.x, midPos.y);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+    ctx.strokeStyle = rgba0;
+    ctx.lineWidth = Math.max(1.5, 2 * this.camera.zoom);
+    ctx.beginPath();
+    ctx.arc(targetPos.x, targetPos.y, 7 * this.camera.zoom, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   }
 
   render() {
@@ -741,39 +1303,13 @@ export class GameEngine {
     // 1. Render Football Pitch & Miniature Stadium
     this.pitch.render(ctx, this.camera);
 
-    // Pass Target Indicator on ground (shows who will receive pass when pressing X)
-    const controlled = this.getControlledPlayer();
-    if (controlled && !this.isKickoff && !this.isFullTime) {
-      const distToBall = Math.hypot(this.ball.x - controlled.x, this.ball.y - controlled.y);
-      if (distToBall < controlled.radius + this.ball.radius + 35 && this.ball.z <= 35) {
-        const moveDir = this.input.getMovementVector();
-        const target = controlled.findBestPassTarget(this.players, moveDir);
-        if (target && target.role !== 'GK') {
-          const tPos = this.camera.worldToScreen(target.x, target.y, 0);
-          ctx.save();
-          ctx.beginPath();
-          ctx.ellipse(
-            tPos.x,
-            tPos.y,
-            (target.radius + 7) * this.camera.zoom,
-            (target.radius + 3.5) * this.camera.zoom * 0.72,
-            0,
-            0,
-            Math.PI * 2
-          );
-          ctx.strokeStyle = 'rgba(45, 212, 191, 0.85)';
-          ctx.lineWidth = 1.8 * this.camera.zoom;
-          ctx.setLineDash([5, 4]);
-          ctx.stroke();
-
-          if (this.camera.zoom > 0.7) {
-            ctx.fillStyle = '#2DD4BF';
-            ctx.font = `bold ${Math.round(8.5 * this.camera.zoom)}px 'Trebuchet MS', sans-serif`;
-            ctx.textAlign = 'center';
-            ctx.fillText('PASS [X]', tPos.x, tPos.y + 15 * this.camera.zoom);
-          }
-          ctx.restore();
-        }
+    // Pass Target Indicator on ground for active human player(s)
+    const controlled = this.getControlledPlayer('p1');
+    const controlledP2 = this.isLocalMultiplayer ? this.getControlledPlayer('p2') : null;
+    if (!this.isMenuIdle) {
+      this.renderPassTargetIndicator(ctx, controlled, 'p1');
+      if (controlledP2) {
+        this.renderPassTargetIndicator(ctx, controlledP2, 'p2');
       }
     }
 
@@ -783,9 +1319,22 @@ export class GameEngine {
       entity.render(ctx, this.camera);
     });
 
+    // 2B. Assisted Shot Aim Preview Line (shown while charging a shot)
+    if (!this.isMenuIdle) {
+      this.renderShotAimGuide(ctx, controlled, 'p1');
+      if (controlledP2) {
+        this.renderShotAimGuide(ctx, controlledP2, 'p2');
+      }
+    }
+
     // 3. Render Shooting or Passing Power Bar above player's head
-    if (controlled && (this.isChargingShot || this.isChargingPass)) {
-      this.renderPlayerPowerBar(ctx, controlled);
+    if (!this.isMenuIdle) {
+      if (controlled && (this.isChargingShot || this.isChargingPass)) {
+        this.renderPlayerPowerBar(ctx, controlled, 'p1');
+      }
+      if (controlledP2 && (this.p2IsChargingShot || this.p2IsChargingPass)) {
+        this.renderPlayerPowerBar(ctx, controlledP2, 'p2');
+      }
     }
 
     // 4. Render Kickoff Countdown Banner
@@ -817,11 +1366,92 @@ export class GameEngine {
   }
 
   /**
+   * FC Mobile-Style Assisted Shooting:
+   * Automatically aims into the opponent's goal from the shooter's standing angle.
+   * Up/Down directional input places the shot toward the top/bottom corner;
+   * neutral vertical input picks the open corner away from the goalkeeper.
+   */
+  computeAssistedShotDirection(player, moveDir) {
+    const teamConfig = player.teamConfig || (player.team === 'blue' ? this.homeTeam : this.awayTeam);
+    const attackDir = teamConfig.direction || 1;
+    const goalX = teamConfig.targetGoalX ?? (attackDir === 1 ? PITCH.WIDTH / 2 : -PITCH.WIDTH / 2);
+
+    const hasMoveInput = moveDir && Math.hypot(moveDir.x, moveDir.y) > 0.1;
+
+    // Goalkeeper punt/clearance always drives safely upfield, steered by vertical input
+    if (player.role === 'GK') {
+      const puntY = hasMoveInput ? moveDir.y * 0.75 : 0;
+      const puntLen = Math.hypot(attackDir, puntY) || 1;
+      const kx = attackDir / puntLen;
+      const ky = puntY / puntLen;
+      return {
+        x: kx,
+        y: ky,
+        targetX: player.x + kx * 260,
+        targetY: player.y + ky * 260,
+        isAssisted: false,
+      };
+    }
+
+    const inDefensiveHalf = player.x * attackDir < -80;
+    const aimingBackwards = hasMoveInput && (moveDir.x * attackDir < -0.35);
+
+    // If deep in own half and explicitly aiming back/away, allow manual directional clearance
+    if (inDefensiveHalf && aimingBackwards) {
+      const len = Math.hypot(moveDir.x, moveDir.y) || 1;
+      return {
+        x: moveDir.x / len,
+        y: moveDir.y / len,
+        targetX: player.x + (moveDir.x / len) * 200,
+        targetY: player.y + (moveDir.y / len) * 200,
+        isAssisted: false,
+      };
+    }
+
+    // Safe target range inside the goal posts (halfGoalW = 95, keep inside woodwork)
+    const maxCornerY = PITCH.GOAL_WIDTH * 0.5 - 21; // ~74 units inside posts
+    let targetY = 0;
+
+    if (hasMoveInput && Math.abs(moveDir.y) > 0.15) {
+      // Player steers shot toward top or bottom corner based on vertical input
+      targetY = Math.max(-1, Math.min(1, moveDir.y)) * maxCornerY;
+    } else {
+      // Neutral vertical input: smart placement away from opposing goalkeeper / toward far post
+      const oppGk = this.players.find((p) => p.team !== player.team && p.role === 'GK');
+      if (oppGk && Math.abs(oppGk.y) > 10) {
+        targetY = oppGk.y > 0 ? -maxCornerY * 0.72 : maxCornerY * 0.72;
+      } else {
+        targetY = player.y >= 0 ? -maxCornerY * 0.68 : maxCornerY * 0.68;
+      }
+    }
+
+    // Aim directly through the goal-line plane (only project past if already on/over the line)
+    const targetX = player.x * attackDir >= goalX * attackDir - 4
+      ? player.x + attackDir * 28
+      : goalX;
+
+    const dx = targetX - player.x;
+    const dy = targetY - player.y;
+    const dist = Math.hypot(dx, dy) || 1;
+
+    return {
+      x: dx / dist,
+      y: dy / dist,
+      targetX,
+      targetY,
+      isAssisted: true,
+    };
+  }
+
+  /**
    * EAFC Arcade Style Floating Power Bar
    */
-  renderPlayerPowerBar(ctx, player) {
-    const isShot = this.isChargingShot;
-    const charge = isShot ? this.shotCharge : this.passCharge;
+  renderPlayerPowerBar(ctx, player, slot = 'p1') {
+    const isP2 = slot === 'p2';
+    const isShot = isP2 ? this.p2IsChargingShot : this.isChargingShot;
+    const charge = isShot
+      ? (isP2 ? this.p2ShotCharge : this.shotCharge)
+      : (isP2 ? this.p2PassCharge : this.passCharge);
     const headZ = PHYSICS.PLAYER_HEIGHT + 26;
     const pos = this.camera.worldToScreen(player.x, player.y, headZ);
 
@@ -840,9 +1470,7 @@ export class GameEngine {
     ctx.fill();
     ctx.stroke();
 
-    // Fill bar with colors:
-    // Shot: Green -> Yellow -> Orange -> Fiery Red
-    // Pass: Sky Blue -> Vivid Turquoise
+    // Fill bar with colors
     let fillCol = '#22C55E';
     if (isShot) {
       if (charge > 0.8) fillCol = '#EF4444';
@@ -873,7 +1501,7 @@ export class GameEngine {
     const cx = width / 2;
     const cy = height / 2 - 25;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+    ctx.fillStyle = 'rgba(11, 17, 32, 0.84)';
     ctx.fillRect(0, cy - 40, width, 80);
 
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
@@ -885,15 +1513,22 @@ export class GameEngine {
     ctx.lineTo(width, cy + 40);
     ctx.stroke();
 
+    const takerTeam = this.kickoffTeam === 'blue' ? this.homeTeam : this.awayTeam;
+    const title = this.isGoldenGoal
+      ? 'GOLDEN GOAL KICK-OFF'
+      : this.currentHalf === 2
+        ? '2ND HALF KICK-OFF'
+        : 'MATCH KICK-OFF';
+
     ctx.fillStyle = '#FACC15';
-    ctx.font = "900 32px 'Trebuchet MS', sans-serif";
+    ctx.font = "800 30px 'Barlow Condensed', 'Trebuchet MS', sans-serif";
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('⚡ MATCH KICK-OFF ⚡', cx, cy - 8);
+    ctx.fillText(title, cx, cy - 9);
 
-    ctx.font = "600 15px 'Trebuchet MS', sans-serif";
+    ctx.font = "600 14px 'Plus Jakarta Sans', sans-serif";
     ctx.fillStyle = '#E2E8F0';
-    ctx.fillText('GET READY!', cx, cy + 20);
+    ctx.fillText(`${(takerTeam?.name || 'Home').toUpperCase()} TO KICK OFF`, cx, cy + 19);
 
     ctx.restore();
   }
@@ -938,9 +1573,10 @@ export class GameEngine {
     const teamName = scoringTeamInfo.name.toUpperCase();
     const teamBadge = scoringTeamInfo.badge || '⚽';
     const scorerName = this.lastScorer ? `${this.lastScorer.name.toUpperCase()} (#${this.lastScorer.number})` : 'GOAL!';
+    const hasAssist = !!(this.lastAssister && this.lastAssister !== this.lastScorer);
 
     const cardW = Math.min(width * 0.9, 560);
-    const cardH = 120;
+    const cardH = hasAssist ? 136 : 120;
     const rx = cx - cardW / 2;
     const ry = cy - cardH / 2;
 
@@ -965,26 +1601,52 @@ export class GameEngine {
     ctx.fillText(bannerTitle, cx, ry + 18);
 
     ctx.fillStyle = '#FACC15';
-    ctx.font = "800 28px 'Trebuchet MS', sans-serif";
-    ctx.fillText(scorerName, cx, ry + 64);
+    ctx.font = "800 26px 'Trebuchet MS', sans-serif";
+    ctx.fillText(scorerName, cx, ry + 62);
+
+    if (hasAssist) {
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = "700 13px 'Trebuchet MS', sans-serif";
+      ctx.fillText(`ASSIST: ${this.lastAssister.name.toUpperCase()} (#${this.lastAssister.number})`, cx, ry + 86);
+    }
 
     ctx.font = "700 16px 'Trebuchet MS', sans-serif";
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(
       `${this.homeTeam.shortName || 'BLU'} ${this.score.blue}  -  ${this.score.red} ${this.awayTeam.shortName || 'RED'}`,
       cx,
-      ry + 96
+      ry + (hasAssist ? 112 : 96)
     );
 
     ctx.restore();
   }
 
   renderMiniRadar(ctx, width, height) {
-    const radarW = 140;
-    const radarH = 84;
-    const pad = 16;
-    const rx = width - radarW - pad;
-    const ry = height - radarH - pad;
+    const isTouchOrNarrow = this.touchHudActive || width <= 640;
+    let radarW = 140;
+    let radarH = 84;
+    let pad = 16;
+    let rx = width - radarW - pad;
+    let ry = height - radarH - pad;
+
+    if (isTouchOrNarrow) {
+      if (width >= 540) {
+        // Landscape mobile/tablet: tuck neatly at bottom-center between left joystick and right action buttons
+        radarW = Math.min(108, Math.floor(width * 0.18));
+        radarH = Math.round(radarW * 0.58);
+        pad = 8;
+        rx = Math.round((width - radarW) / 2);
+        ry = height - radarH - pad;
+      } else {
+        // Narrow portrait mobile: tuck in top-right corner clear of center circle & bottom controls
+        radarW = Math.min(96, Math.floor(width * 0.26));
+        radarH = Math.round(radarW * 0.58);
+        pad = 8;
+        rx = width - radarW - pad;
+        ry = pad;
+      }
+    }
+    const compact = isTouchOrNarrow;
 
     ctx.save();
     ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
@@ -1004,7 +1666,7 @@ export class GameEngine {
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.arc(midX, midY, 12, 0, Math.PI * 2);
+    ctx.arc(midX, midY, compact ? 9 : 12, 0, Math.PI * 2);
     ctx.stroke();
 
     const toRadar = (wx, wy) => {
@@ -1016,12 +1678,12 @@ export class GameEngine {
     this.players.forEach((p) => {
       const pt = toRadar(p.x, p.y);
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, p.isControlled ? 4 : 3, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, p.isControlled ? (compact ? 3.5 : 4) : (compact ? 2.5 : 3), 0, Math.PI * 2);
       ctx.fillStyle = p.team === 'blue' ? (this.homeTeam.accentColor || '#38BDF8') : (this.awayTeam.accentColor || '#F87171');
       ctx.fill();
 
-      if (p.isControlled) {
-        ctx.strokeStyle = '#FACC15';
+      if (p.isControlled || p.controlledBy) {
+        ctx.strokeStyle = p.controlledBy === 'p2' ? '#22D3EE' : '#FACC15';
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
@@ -1029,7 +1691,7 @@ export class GameEngine {
 
     const bPt = toRadar(this.ball.x, this.ball.y);
     ctx.beginPath();
-    ctx.arc(bPt.x, bPt.y, 2.8, 0, Math.PI * 2);
+    ctx.arc(bPt.x, bPt.y, compact ? 2.4 : 2.8, 0, Math.PI * 2);
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
 
@@ -1037,7 +1699,7 @@ export class GameEngine {
   }
 
   renderTouchJoystick(ctx) {
-    if (!this.input.touchJoystick.active) return;
+    if (this.touchHudActive || !this.input.touchJoystick.active) return;
     const tj = this.input.touchJoystick;
 
     ctx.save();

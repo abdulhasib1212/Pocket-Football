@@ -2,7 +2,7 @@
  * Player Entity & 2.5D Visuals
  * Handles 3v3 player models, movement, role positioning, animation strides, and subtle shadows.
  */
-import { PITCH, PHYSICS, TEAMS } from './constants.js';
+import { PITCH, PHYSICS, TEAMS, DIFFICULTIES } from './constants.js';
 
 export class Player {
   constructor(config) {
@@ -12,6 +12,7 @@ export class Player {
     this.teamConfig = config.teamConfig || (config.team === 'blue' ? TEAMS.BLUE : TEAMS.RED);
     this.role = config.role; // 'GK', 'DF', 'FW'
     this.number = config.number || 10;
+    this.difficulty = config.difficulty || 'normal';
     
     // World coordinates
     this.startX = config.x || 0;
@@ -26,6 +27,7 @@ export class Player {
 
     this.facingAngle = config.team === 'blue' ? 0 : Math.PI; // Blue faces right (+X), Red faces left (-X)
     this.isControlled = !!config.isControlled;
+    this.controlledBy = config.controlledBy || (this.isControlled ? 'p1' : null);
 
     // Movement attributes
     this.radius = PHYSICS.PLAYER_RADIUS;
@@ -41,10 +43,14 @@ export class Player {
     this.isTackling = false;
     this.tackleTimer = 0;
     this.tackleCooldown = 0;
+    this.aiTackleCooldown = 0;
+    this.aiTackleDelay = 0;
+    this.aiRestartTimer = 0;
 
     // Match Performance Stats (tracked for Match MVP award)
     this.stats = {
       goals: 0,
+      assists: 0,
       tackles: 0,
       passes: 0,
       shots: 0
@@ -68,6 +74,9 @@ export class Player {
     this.isTackling = false;
     this.tackleTimer = 0;
     this.tackleCooldown = 0;
+    this.aiTackleCooldown = 0;
+    this.aiTackleDelay = 0;
+    this.aiRestartTimer = 0;
     this.isStumbled = false;
     this.stumbleTimer = 0;
     this.possessionTimer = 0;
@@ -77,6 +86,8 @@ export class Player {
     this.idleBreathing += dt * 3;
     if (this.kickCooldown > 0) this.kickCooldown -= dt;
     if (this.tackleCooldown > 0) this.tackleCooldown -= dt;
+    if (this.aiTackleCooldown > 0) this.aiTackleCooldown -= dt;
+    if (this.aiRestartTimer > 0) this.aiRestartTimer -= dt;
     if (this.kickAnimTimer > 0) {
       this.kickAnimTimer -= dt;
       if (this.kickAnimTimer <= 0) this.isKicking = false;
@@ -144,12 +155,17 @@ export class Player {
     }
   }
 
+  getDifficultyConfig() {
+    return DIFFICULTIES[this.difficulty] || DIFFICULTIES.normal;
+  }
+
   handleAI(dt, ball, allPlayers) {
     if (!ball) return;
 
+    const diff = this.getDifficultyConfig();
     let targetX = this.startX;
     let targetY = this.startY;
-    let desiredSpeed = this.maxSpeed * 0.78;
+    let desiredSpeed = this.maxSpeed * 0.78 * diff.aiSpeedMult;
 
     const teamConfig = this.teamConfig || (this.team === 'blue' ? TEAMS.BLUE : TEAMS.RED);
     const isAttackingRight = teamConfig.direction === 1;
@@ -159,33 +175,118 @@ export class Player {
     // 1. IF AI PLAYER HAS POSSESSION:
     if (hasBallPossession) {
       this.possessionTimer += dt;
+      this.aiTackleDelay = 0;
       const attackGoalX = teamConfig.targetGoalX;
       const distToGoal = Math.hypot(attackGoalX - this.x, 0 - this.y);
 
-      // Drive into attacking half
+      // Hold position briefly during a set restart (goal kick / kickoff) before distributing
+      if (this.aiRestartTimer > 0) {
+        this.vx *= 0.65;
+        this.vy *= 0.65;
+        this.facingAngle = isAttackingRight ? 0 : Math.PI;
+        return;
+      }
+
+      // Goalkeeper distribution: stay near goal/box and distribute cleanly to open teammate
+      if (this.role === 'GK') {
+        this.vx *= 0.72;
+        this.vy *= 0.72;
+        this.facingAngle = isAttackingRight ? 0 : Math.PI;
+        if (this.possessionTimer >= 0.22 && this.kickCooldown <= 0) {
+          const passTarget = this.findBestPassTarget(allPlayers);
+          if (passTarget) {
+            this.performPass(ball, passTarget, PHYSICS.PASS_POWER * 1.12);
+          } else {
+            this.performKick(
+              ball,
+              isAttackingRight ? 1 : -1,
+              (Math.random() - 0.5) * 0.35,
+              PHYSICS.SHOT_POWER * 0.9,
+              18,
+              false
+            );
+          }
+          this.possessionTimer = 0;
+        }
+        return;
+      }
+
+      // Drive into attacking half, weaving around defenders directly ahead
       targetX = this.x + teamConfig.direction * 140;
       targetY = this.y * 0.75;
-      desiredSpeed = this.maxSpeed * 0.95;
+      if (allPlayers) {
+        let blocker = null;
+        let minBlockerDist = 135;
+        for (const op of allPlayers) {
+          if (op.team === this.team) continue;
+          const aheadDist = (op.x - this.x) * teamConfig.direction;
+          const lateralDist = Math.abs(op.y - this.y);
+          if (aheadDist > -10 && aheadDist < minBlockerDist && lateralDist < 65) {
+            minBlockerDist = aheadDist;
+            blocker = op;
+          }
+        }
+        if (blocker) {
+          const evadeWeight = diff.id === 'easy' ? 0.25 : diff.id === 'hard' ? 1.15 : 0.75;
+          const evadeDir = blocker.y === this.y ? (this.y >= 0 ? -1 : 1) : (this.y >= blocker.y ? 1 : -1);
+          const maxLaneY = PITCH.HEIGHT / 2 - 70;
+          targetY = Math.max(-maxLaneY, Math.min(maxLaneY, this.y + evadeDir * 115 * evadeWeight));
+        }
+      }
+      desiredSpeed = this.maxSpeed * 0.95 * diff.aiSpeedMult;
 
       // STRIKER IN RANGE: SHOOT!
-      if (this.role === 'FW' && distToGoal < 270) {
+      if (this.role === 'FW' && distToGoal < diff.aiShootRange) {
         if (this.kickCooldown <= 0) {
-          const cornerY = (Math.random() > 0.5 ? 1 : -1) * (PITCH.GOAL_WIDTH * 0.35);
+          let cornerY = (Math.random() > 0.5 ? 1 : -1) * (PITCH.GOAL_WIDTH * 0.35);
+          if (diff.id === 'easy') {
+            cornerY = (Math.random() - 0.5) * (PITCH.GOAL_WIDTH * 0.55);
+          } else if (diff.id === 'hard' && allPlayers) {
+            const oppGk = allPlayers.find((p) => p.team !== this.team && p.role === 'GK');
+            if (oppGk && Math.abs(oppGk.y) > 8) {
+              cornerY = oppGk.y > 0 ? -PITCH.GOAL_WIDTH * 0.39 : PITCH.GOAL_WIDTH * 0.39;
+            } else {
+              cornerY = (this.y >= 0 ? -1 : 1) * (PITCH.GOAL_WIDTH * 0.38);
+            }
+          }
           const dy = cornerY - this.y;
           const dx = attackGoalX - this.x;
-          const dist = Math.hypot(dx, dy);
-          this.performKick(ball, dx / dist, dy / dist, PHYSICS.SHOT_POWER, PHYSICS.SHOT_HEIGHT);
+          const dist = Math.hypot(dx, dy) || 1;
+          this.performKick(
+            ball,
+            dx / dist,
+            dy / dist,
+            PHYSICS.SHOT_POWER * diff.aiShotSpeedMult,
+            PHYSICS.SHOT_HEIGHT,
+            true
+          );
           this.possessionTimer = 0;
           return;
         }
       }
 
-      // HIGH PASS URGENCY: Pass to teammate after brief touch (0.2s - 0.45s) instead of roaming!
-      if (this.possessionTimer >= 0.25 && this.kickCooldown <= 0) {
+      // SMART PASSING: Pass forward to open teammates or lay off under pressure (scaled by difficulty)
+      if (this.possessionTimer >= diff.aiPassDelay && this.kickCooldown <= 0) {
         const passTarget = this.findBestPassTarget(allPlayers);
         if (passTarget) {
           const distToTarget = Math.hypot(passTarget.x - this.x, passTarget.y - this.y);
-          if (distToTarget > 60) {
+          const forwardGain = (passTarget.x - this.x) * teamConfig.direction;
+          let nearestOppDist = 999;
+          if (allPlayers) {
+            for (const op of allPlayers) {
+              if (op.team !== this.team) {
+                const d = Math.hypot(op.x - this.x, op.y - this.y);
+                if (d < nearestOppDist) nearestOppDist = d;
+              }
+            }
+          }
+
+          const shouldPass =
+            this.role === 'DF'
+              ? (distToTarget > 65 && (forwardGain > -30 || nearestOppDist < 95))
+              : (passTarget.role !== 'GK' && distToTarget > 65 && (forwardGain > 15 || nearestOppDist < 54));
+
+          if (shouldPass) {
             this.performPass(ball, passTarget);
             this.possessionTimer = 0;
             return;
@@ -193,40 +294,145 @@ export class Player {
         }
       }
 
-      // Clear/drive forward if held longer than 1.0s without options
-      if (this.possessionTimer > 1.0 && this.kickCooldown <= 0) {
-        this.performKick(ball, isAttackingRight ? 1 : -1, (Math.random() - 0.5) * 0.3, PHYSICS.SHOT_POWER * 0.85, PHYSICS.SHOT_HEIGHT * 0.6);
+      // Clear/drive forward if held longer than 1.45s without options
+      if (this.possessionTimer > 1.45 && this.kickCooldown <= 0) {
+        this.performKick(
+          ball,
+          isAttackingRight ? 1 : -1,
+          (Math.random() - 0.5) * 0.3,
+          PHYSICS.SHOT_POWER * 0.85 * diff.aiShotSpeedMult,
+          PHYSICS.SHOT_HEIGHT * 0.6,
+          null
+        );
         this.possessionTimer = 0;
         return;
       }
     } else {
       this.possessionTimer = 0;
 
-      // 2. DEFENSIVE TACKLING: If opponent has the ball, press & challenge!
-      if (ball.carrier && ball.carrier.team !== this.team) {
-        const distToOpponent = Math.hypot(ball.carrier.x - this.x, ball.carrier.y - this.y);
-        if (distToOpponent < 280) {
-          targetX = ball.carrier.x;
-          targetY = ball.carrier.y;
-          desiredSpeed = this.maxSpeed * 0.98;
-
-          // Attempt tackle if close to opponent carrier
-          if (distToOpponent <= PHYSICS.TACKLE_RANGE + 4 && this.kickCooldown <= 0) {
-            this.performTackle(ball, allPlayers, null);
+      // Helper: determine if this AI outfield player is the closest teammate to press the ball
+      let isClosestOutfieldPresser = true;
+      if (this.role !== 'GK' && allPlayers) {
+        for (const mate of allPlayers) {
+          if (mate !== this && mate.team === this.team && mate.role !== 'GK') {
+            const mateDist = Math.hypot(ball.x - mate.x, ball.y - mate.y);
+            if (mateDist + 18 < distToBall) {
+              isClosestOutfieldPresser = false;
+              break;
+            }
           }
         }
-      } else if (!ball.carrier && distToBall < 300) {
-        // Loose ball: chase!
-        targetX = ball.x;
-        targetY = ball.y;
-        desiredSpeed = this.maxSpeed * 0.95;
+      }
+
+      // 2. DEFENSIVE PRESSING & TIMED TACKLING (never during protected restarts!)
+      if (ball.carrier && ball.carrier.team !== this.team && !ball.isRestartProtected) {
+        const carrier = ball.carrier;
+        const distToOpponent = Math.hypot(carrier.x - this.x, carrier.y - this.y);
+
+        if (this.role === 'GK') {
+          // GK guards the goal line and only challenges inside/near their own penalty box
+          const inBoxThreat =
+            Math.abs(carrier.x - teamConfig.ownGoalX) < diff.aiGkBoxThreatRange && Math.abs(carrier.y) < 145;
+          if (inBoxThreat) {
+            targetX = carrier.x;
+            targetY = carrier.y;
+            desiredSpeed = this.maxSpeed * 0.9 * diff.aiGkTrackMult;
+
+            const toOppAngle = Math.atan2(carrier.y - this.y, carrier.x - this.x);
+            let angleDiff = Math.abs(this.facingAngle - toOppAngle);
+            if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
+
+            if (
+              distToOpponent <= PHYSICS.TACKLE_RANGE * diff.aiTackleRangeMult + 2 &&
+              angleDiff < 1.15 &&
+              this.aiTackleCooldown <= 0 &&
+              this.tackleCooldown <= 0 &&
+              this.kickCooldown <= 0
+            ) {
+              this.aiTackleDelay += dt;
+              if (this.aiTackleDelay >= diff.aiTackleReaction) {
+                this.performTackle(ball, allPlayers, null);
+                this.aiTackleCooldown =
+                  diff.aiTackleCooldownMin + Math.random() * (diff.aiTackleCooldownMax - diff.aiTackleCooldownMin);
+                this.aiTackleDelay = 0;
+              }
+            } else {
+              this.aiTackleDelay = Math.max(0, this.aiTackleDelay - dt * 2.5);
+            }
+          } else {
+            this.aiTackleDelay = 0;
+            const goalX = teamConfig.ownGoalX + (isAttackingRight ? 35 : -35);
+            targetX = goalX;
+            const maxGkY = PITCH.GOAL_WIDTH * 0.42;
+            const trackScale = diff.id === 'easy' ? 0.45 : diff.id === 'hard' ? 0.85 : 0.65;
+            targetY = Math.max(-maxGkY, Math.min(maxGkY, ball.y * trackScale));
+            desiredSpeed = this.maxSpeed * 0.8 * diff.aiGkTrackMult;
+          }
+        } else if (isClosestOutfieldPresser && distToOpponent < diff.aiPressRange) {
+          // Primary outfield presser tracks the ball carrier and times a tackle
+          targetX = carrier.x;
+          targetY = carrier.y;
+          desiredSpeed = this.maxSpeed * 0.94 * diff.aiSpeedMult;
+
+          const toOppAngle = Math.atan2(carrier.y - this.y, carrier.x - this.x);
+          let angleDiff = Math.abs(this.facingAngle - toOppAngle);
+          if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
+
+          if (
+            distToOpponent <= PHYSICS.TACKLE_RANGE * diff.aiTackleRangeMult + 2 &&
+            angleDiff < 1.15 &&
+            this.aiTackleCooldown <= 0 &&
+            this.tackleCooldown <= 0 &&
+            this.kickCooldown <= 0
+          ) {
+            this.aiTackleDelay += dt;
+            if (this.aiTackleDelay >= diff.aiTackleReaction) {
+              this.performTackle(ball, allPlayers, null);
+              this.aiTackleCooldown =
+                diff.aiTackleCooldownMin + Math.random() * (diff.aiTackleCooldownMax - diff.aiTackleCooldownMin);
+              this.aiTackleDelay = 0;
+            }
+          } else {
+            this.aiTackleDelay = Math.max(0, this.aiTackleDelay - dt * 2.5);
+          }
+        } else {
+          // Supporting outfield AI drops into defensive cover instead of dogpiling/spam-tackling
+          this.aiTackleDelay = 0;
+          const coverX = ball.x * 0.52 + teamConfig.ownGoalX * 0.48;
+          targetX = coverX;
+          targetY = this.startY * 0.45 + ball.y * 0.38;
+          desiredSpeed = this.maxSpeed * 0.84 * diff.aiSpeedMult;
+        }
+      } else if (!ball.carrier && !ball.isRestartProtected && distToBall < diff.aiPressRange && (this.role !== 'GK' || Math.abs(ball.x - teamConfig.ownGoalX) < diff.aiGkBoxThreatRange + 15)) {
+        // Loose ball or incoming shot: GK predicts line on Hard, otherwise chases!
+        this.aiTackleDelay = 0;
+        if (this.role === 'GK' && diff.aiPredictShots && ball.shotAtGoalTeam === this.team && Math.abs(ball.vx) > 80) {
+          const lineX = teamConfig.ownGoalX + (isAttackingRight ? 32 : -32);
+          const t = (lineX - ball.x) / ball.vx;
+          const maxGkY = PITCH.GOAL_WIDTH * 0.44;
+          const predY = t > 0 ? ball.y + ball.vy * t : ball.y;
+          targetX = lineX;
+          targetY = Math.max(-maxGkY, Math.min(maxGkY, predY));
+          desiredSpeed = this.maxSpeed * 1.05 * diff.aiGkTrackMult;
+        } else if (this.role === 'GK' || isClosestOutfieldPresser || distToBall < 140) {
+          targetX = ball.x;
+          targetY = ball.y;
+          desiredSpeed = this.maxSpeed * 0.94 * (this.role === 'GK' ? diff.aiGkTrackMult : diff.aiSpeedMult);
+        } else {
+          targetX = this.startX * 0.45 + ball.x * 0.35;
+          targetY = this.startY * 0.4 + ball.y * 0.45;
+          desiredSpeed = this.maxSpeed * 0.82 * diff.aiSpeedMult;
+        }
       } else {
-        // Positional shape
+        // Positional shape (also used during protected restarts)
+        this.aiTackleDelay = 0;
         if (this.role === 'GK') {
           const goalX = teamConfig.ownGoalX + (isAttackingRight ? 35 : -35);
           targetX = goalX;
           const maxGkY = PITCH.GOAL_WIDTH * 0.42;
-          targetY = Math.max(-maxGkY, Math.min(maxGkY, ball.y * 0.65));
+          const trackScale = diff.id === 'easy' ? 0.45 : diff.id === 'hard' ? 0.85 : 0.65;
+          targetY = Math.max(-maxGkY, Math.min(maxGkY, ball.y * trackScale));
+          desiredSpeed = this.maxSpeed * 0.8 * diff.aiGkTrackMult;
         } else if (this.role === 'DF') {
           const defLineX = isAttackingRight ? -PITCH.WIDTH * 0.22 : PITCH.WIDTH * 0.22;
           targetX = defLineX + (ball.x * 0.28);
@@ -248,11 +454,11 @@ export class Player {
       const dirX = dx / dist;
       const dirY = dy / dist;
       const targetVx = dirX * desiredSpeed;
-      const targetVy = dirY * desiredSpeed;
+      const targetVy = dy * (desiredSpeed / dist);
 
-      const accel = PHYSICS.PLAYER_ACCEL * dt * 0.85;
-      this.vx += (targetVx - this.vx) * Math.min(1, accel / desiredSpeed);
-      this.vy += (targetVy - this.vy) * Math.min(1, accel / desiredSpeed);
+      const accel = PHYSICS.PLAYER_ACCEL * dt * 0.85 * diff.aiAccelMult;
+      this.vx += (targetVx - this.vx) * Math.min(1, accel / Math.max(1, desiredSpeed));
+      this.vy += (targetVy - this.vy) * Math.min(1, accel / Math.max(1, desiredSpeed));
       this.facingAngle = Math.atan2(this.vy, this.vx);
     } else {
       this.vx *= 0.8;
@@ -263,6 +469,7 @@ export class Player {
 
   performTackle(ball, allPlayers, audio) {
     if (this.tackleCooldown > 0 || this.kickCooldown > 0 || this.isStumbled) return false;
+    if (ball.isRestartProtected && ball.carrier && ball.carrier.team !== this.team) return false;
 
     // Check if there is an opponent carrier within auto-target challenge range (65 units)
     let targetOpponent = null;
@@ -303,16 +510,16 @@ export class Player {
     }
 
     // Athletic slide/standing tackle lunge burst!
-    const lungePower = 230;
+    const lungePower = 210;
     this.vx += Math.cos(this.facingAngle) * lungePower;
     this.vy += Math.sin(this.facingAngle) * lungePower;
 
     this.isTackling = true;
     this.tackleTimer = 0.28;
-    this.tackleCooldown = 0.38;
+    this.tackleCooldown = 0.85; // Missed tackles incur clear recovery cooldown
     this.isKicking = true;
     this.kickAnimTimer = 0.22;
-    this.kickCooldown = 0.35;
+    this.kickCooldown = 0.45;
 
     // 1. Challenging opponent ball carrier
     if (ball.carrier && ball.carrier.team !== this.team) {
@@ -329,6 +536,9 @@ export class Player {
           // Clean takeaway: tackler sticks ball to feet!
           ball.carrier = this;
           ball.lastKickedBy = this;
+          ball.pendingPassFrom = null;
+          ball.lastPassInfo = null;
+          ball.shotAtGoalTeam = null;
           ball.vx = this.vx * 0.4;
           ball.vy = this.vy * 0.4;
         } else {
@@ -337,7 +547,12 @@ export class Player {
           ball.vx = Math.cos(pokeAngle) * 200;
           ball.vy = Math.sin(pokeAngle) * 200;
           ball.lastKickedBy = this;
+          ball.pendingPassFrom = null;
+          ball.lastPassInfo = null;
+          ball.shotAtGoalTeam = null;
         }
+
+        this.tackleCooldown = 0.62;
 
         if (this.stats) {
           this.stats.tackles = (this.stats.tackles || 0) + 1;
@@ -348,15 +563,18 @@ export class Player {
       }
     }
 
-    // 2. Loose ball sliding interception
-    if (!ball.carrier && ball.z <= 30) {
+    // 2. Loose ball sliding interception / GK diving save
+    const maxDiveZ = this.role === 'GK' ? 55 : 30;
+    const diveRange = this.role === 'GK' ? PHYSICS.TACKLE_RANGE + 14 : PHYSICS.TACKLE_RANGE + 8;
+    if (!ball.carrier && ball.z <= maxDiveZ) {
       const dist = Math.hypot(ball.x - this.x, ball.y - this.y);
-      if (dist <= PHYSICS.TACKLE_RANGE + 8) {
+      if (dist <= diveRange) {
         ball.carrier = this;
         ball.lastKickedBy = this;
-        if (this.stats) {
-          this.stats.tackles = (this.stats.tackles || 0) + 1;
-        }
+        ball.pendingPassFrom = null;
+        ball.lastPassInfo = null;
+        ball.shotAtGoalTeam = null;
+        this.tackleCooldown = 0.62;
         if (audio) audio.playTackle();
         return true;
       }
@@ -365,7 +583,27 @@ export class Player {
     return false;
   }
 
-  performKick(ball, dirX, dirY, power = PHYSICS.SHOT_POWER, height = PHYSICS.SHOT_HEIGHT) {
+  isShotTowardGoal(kx, ky) {
+    if (this.role === 'GK') return false;
+    const teamConfig = this.teamConfig || (this.team === 'blue' ? TEAMS.BLUE : TEAMS.RED);
+    const dir = teamConfig.direction || 1;
+    const attackGoalX = teamConfig.targetGoalX ?? (dir === 1 ? PITCH.WIDTH / 2 : -PITCH.WIDTH / 2);
+
+    // Must be aimed toward the opponent's goal
+    if (kx * dir <= 0.25) return false;
+
+    // Must be within realistic attacking/shooting range
+    const distToGoalLineX = (attackGoalX - this.x) * dir;
+    if (distToGoalLineX < -10 || distToGoalLineX > PITCH.WIDTH * 0.58) return false;
+
+    // Project trajectory onto the goal line to filter out wide clearances
+    const t = (attackGoalX - this.x) / kx;
+    if (t <= 0) return false;
+    const projY = this.y + ky * t;
+    return Math.abs(projY) <= PITCH.GOAL_WIDTH * 1.35;
+  }
+
+  performKick(ball, dirX, dirY, power = PHYSICS.SHOT_POWER, height = PHYSICS.SHOT_HEIGHT, isShot = null) {
     if (this.kickCooldown > 0 || this.isStumbled) return false;
 
     const dx = ball.x - this.x;
@@ -389,18 +627,35 @@ export class Player {
         ky = Math.sin(this.facingAngle);
       }
 
+      if (ball.pendingPassFrom && ball.pendingPassFrom !== this && ball.pendingPassFrom.team === this.team) {
+        if (ball.pendingPassFrom.stats) {
+          ball.pendingPassFrom.stats.passes = (ball.pendingPassFrom.stats.passes || 0) + 1;
+        }
+        ball.lastPassInfo = {
+          passer: ball.pendingPassFrom,
+          team: this.team,
+          ttl: 6.0,
+        };
+      } else if (ball.lastPassInfo && ball.lastPassInfo.team !== this.team) {
+        ball.lastPassInfo = null;
+      }
+
       ball.vx = kx * power;
       ball.vy = ky * power;
-      ball.vz = Math.min(PHYSICS.SHOT_HEIGHT, height);
+      ball.vz = Math.min(220, height);
       ball.lastKickedBy = this;
+      ball.pendingPassFrom = null;
 
-      if (this.stats) {
+      const countsAsShot = isShot === false ? false : (isShot === true || this.isShotTowardGoal(kx, ky));
+      if (countsAsShot && this.stats) {
         this.stats.shots = (this.stats.shots || 0) + 1;
       }
+      ball.shotAtGoalTeam = countsAsShot ? (this.team === 'red' ? 'blue' : 'red') : null;
 
       this.kickCooldown = 0.28;
       this.isKicking = true;
       this.kickAnimTimer = 0.18;
+      this.facingAngle = Math.atan2(ky, kx);
       return true;
     }
     return false;
@@ -425,14 +680,16 @@ export class Player {
       const passDist = Math.hypot(passDx, passDy);
 
       if (passDist > 5) {
+        if (ball.pendingPassFrom && ball.pendingPassFrom !== this && ball.pendingPassFrom.team === this.team && ball.pendingPassFrom.stats) {
+          ball.pendingPassFrom.stats.passes = (ball.pendingPassFrom.stats.passes || 0) + 1;
+        }
         ball.vx = (passDx / passDist) * power;
         ball.vy = (passDy / passDist) * power;
         ball.vz = 0; // Ground pass
         ball.lastKickedBy = this;
-
-        if (this.stats) {
-          this.stats.passes = (this.stats.passes || 0) + 1;
-        }
+        ball.pendingPassFrom = this;
+        ball.lastPassInfo = null;
+        ball.shotAtGoalTeam = null;
 
         this.kickCooldown = 0.24;
         this.isKicking = true;
@@ -542,8 +799,11 @@ export class Player {
       ctx.restore();
     }
 
-    // 2. Selection Ring for Controlled Player
-    if (this.isControlled) {
+    // 2. Selection Ring for Controlled Player (P1 Gold vs P2 Cyan)
+    const ctrlSlot = this.controlledBy || (this.isControlled ? 'p1' : null);
+    const ringColor = ctrlSlot === 'p2' ? '#22D3EE' : '#FACC15';
+    const ptrBorder = ctrlSlot === 'p2' ? '#0E7490' : '#78350F';
+    if (this.isControlled || ctrlSlot) {
       ctx.save();
       const ringPulse = Math.sin(this.idleBreathing * 2) * 2;
       ctx.beginPath();
@@ -556,7 +816,7 @@ export class Player {
         0,
         Math.PI * 2
       );
-      ctx.strokeStyle = '#FACC15'; // Vibrant gold ring
+      ctx.strokeStyle = ringColor;
       ctx.lineWidth = 2.5 * camera.zoom;
       ctx.stroke();
 
@@ -570,9 +830,9 @@ export class Player {
       ctx.lineTo(ptrPos.x - 7 * camera.zoom, ptrPos.y - 20 * camera.zoom + bob);
       ctx.lineTo(ptrPos.x + 7 * camera.zoom, ptrPos.y - 20 * camera.zoom + bob);
       ctx.closePath();
-      ctx.fillStyle = '#FACC15';
+      ctx.fillStyle = ringColor;
       ctx.fill();
-      ctx.strokeStyle = '#78350F';
+      ctx.strokeStyle = ptrBorder;
       ctx.lineWidth = 1 * camera.zoom;
       ctx.stroke();
 
@@ -698,13 +958,30 @@ export class Player {
     ctx.arc(eyeX, eyeY, 1.2 * camera.zoom, 0, Math.PI * 2);
     ctx.fill();
 
-    // E. Overhead Role / Tag Label
-    if (camera.zoom > 0.75) {
+    // E. Overhead Player Name Label
+    if (camera.zoom > 0.38) {
       const tagPos = camera.worldToScreen(this.x, this.y, headZ + 12 + bodyBob);
-      ctx.font = `bold ${Math.round(9 * camera.zoom)}px 'Trebuchet MS', sans-serif`;
+      const fontSize = Math.max(8, Math.round(9.5 * camera.zoom));
+      ctx.font = `700 ${fontSize}px 'Plus Jakarta Sans', 'Trebuchet MS', sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillStyle = this.isControlled ? '#FEF08A' : 'rgba(255, 255, 255, 0.85)';
-      const label = this.isControlled ? `P1 · ${this.role}` : `${this.role}`;
+      ctx.textBaseline = 'middle';
+      const activeSlot = this.controlledBy || (this.isControlled ? 'p1' : null);
+      const label = activeSlot === 'p2'
+        ? `P2 · ${this.name}`
+        : activeSlot === 'p1'
+          ? `P1 · ${this.name}`
+          : this.name;
+
+      ctx.lineWidth = Math.max(2, 2.4 * camera.zoom);
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = 'rgba(11, 17, 32, 0.8)';
+      ctx.strokeText(label, tagPos.x, tagPos.y);
+
+      ctx.fillStyle = activeSlot === 'p2'
+        ? '#67E8F9'
+        : activeSlot === 'p1'
+          ? '#FEF08A'
+          : 'rgba(255, 255, 255, 0.95)';
       ctx.fillText(label, tagPos.x, tagPos.y);
     }
 

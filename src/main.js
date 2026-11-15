@@ -7,6 +7,7 @@ import { GameEngine } from './game/engine.js';
 import { TEAMS, TEAMS_LIST } from './game/constants.js';
 import { AudioManager } from './game/audio.js';
 import { TournamentManager } from './game/tournament.js';
+import { CrazyGamesBridge } from './game/crazygames.js';
 
 window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('gameCanvas');
@@ -15,9 +16,11 @@ window.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // --- Shared Audio & Tournament Systems ---
+  // --- Shared Audio, Tournament & CrazyGames SDK Systems ---
   const audio = new AudioManager();
   const tournament = new TournamentManager();
+  const crazyGames = new CrazyGamesBridge();
+  crazyGames.init();
 
   // Unlock Web Audio API on first user interaction
   const unlockAudioOnGesture = () => {
@@ -37,7 +40,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const quickMatchModal = document.getElementById('quickMatchModal');
   const preMatchOverlay = document.getElementById('preMatchOverlay');
   const tournamentModal = document.getElementById('tournamentModal');
+  const halfTimeModal = document.getElementById('halfTimeModal');
   const fullTimeModal = document.getElementById('fullTimeModal');
+  const matchMvpModal = document.getElementById('matchMvpModal');
   const championModal = document.getElementById('championModal');
   const settingsModal = document.getElementById('settingsModal');
   const helpModal = document.getElementById('helpModal');
@@ -51,16 +56,38 @@ window.addEventListener('DOMContentLoaded', () => {
   const homeBadgeIconEl = document.getElementById('homeBadgeIcon');
   const awayBadgeIconEl = document.getElementById('awayBadgeIcon');
   const matchClockEl = document.getElementById('matchClock');
+  const matchHalfBadgeEl = document.getElementById('matchHalfBadge');
   const playerTagEl = document.getElementById('playerTag');
+  const player2TagEl = document.getElementById('player2Tag');
+  const arcadeFooterTextEl = document.getElementById('arcadeFooterText');
+  const quickHomeColTitle = document.getElementById('quickHomeColTitle');
+  const quickAwayColTitle = document.getElementById('quickAwayColTitle');
+  const quickDifficultyBox = document.getElementById('quickDifficultyBox');
+  const preHomeMeta = document.getElementById('preHomeMeta');
+  const preAwayMeta = document.getElementById('preAwayMeta');
   const cameraBtn = document.getElementById('cameraBtn');
   const soundQuickBtn = document.getElementById('soundQuickBtn');
-  const passBtn = document.getElementById('passBtn');
-  const shootBtn = document.getElementById('shootBtn');
-  const switchPlayerBtn = document.getElementById('switchPlayerBtn');
+  const fullscreenBtn = document.getElementById('fullscreenBtn');
+  const menuFullscreenBtn = document.getElementById('menuFullscreenBtn');
   const inGameMenuBtn = document.getElementById('inGameMenuBtn');
   const headerSettingsBtn = document.getElementById('headerSettingsBtn');
+  const settingsPausedBadge = document.getElementById('settingsPausedBadge');
+  const pauseMatchActions = document.getElementById('pauseMatchActions');
+  const pauseRestartBtn = document.getElementById('pauseRestartBtn');
+  const pauseMainMenuBtn = document.getElementById('pauseMainMenuBtn');
+  const doneSettingsBtn = document.getElementById('doneSettingsBtn');
   const penaltyShootoutNote = document.getElementById('penaltyShootoutNote');
   const ftGoldenGoalBtn = document.getElementById('ftGoldenGoalBtn');
+  const menuControlsHint = document.getElementById('menuControlsHint');
+
+  // Mobile Touch Controls DOM
+  const touchControlsOverlay = document.getElementById('touchControlsOverlay');
+  const touchJoystickZone = document.getElementById('touchJoystickZone');
+  const touchJoystickBase = document.getElementById('touchJoystickBase');
+  const touchJoystickKnob = document.getElementById('touchJoystickKnob');
+  const touchPassBtn = document.getElementById('touchPassBtn');
+  const touchShootBtn = document.getElementById('touchShootBtn');
+  const touchSwitchBtn = document.getElementById('touchSwitchBtn');
 
   // Format time mm:ss
   const formatTime = (secs) => {
@@ -78,11 +105,52 @@ window.addEventListener('DOMContentLoaded', () => {
   let quickMatchHomeTeamId = 'waves';
   let quickMatchAwayTeamId = 'strikers';
   let quickMatchDuration = 180;
+  let selectedQuickPlayersMode = '1p'; // '1p' | '2p'
+  let isLocalMultiplayerMatch = false;
+  let lastActiveIsLocal2p = false;
+  const DIFFICULTY_KEY = 'pocket_football_difficulty';
+  let selectedDifficulty = 'normal';
+  try {
+    const savedDiff = localStorage.getItem(DIFFICULTY_KEY);
+    if (savedDiff === 'easy' || savedDiff === 'normal' || savedDiff === 'hard') {
+      selectedDifficulty = savedDiff;
+    }
+  } catch (e) {}
   let lastActiveHomeTeam = null;
   let lastActiveAwayTeam = null;
+  let lastActiveDuration = 180;
+  let lastMatchMvp = null;
 
   // Tournament specific setup
   let selectedTournamentTeamId = 'waves';
+
+  const updateFooterControlsHint = (is2p) => {
+    if (!arcadeFooterTextEl) return;
+    if (is2p) {
+      arcadeFooterTextEl.innerHTML = `
+        <span><strong>P1:</strong> <span class="key-badge">WASD</span> Move <span class="sep">·</span> <span class="key-badge">X</span> Pass <span class="sep">·</span> <span class="key-badge">Space</span> Shoot <span class="sep">·</span> <span class="key-badge">Q</span> Switch</span>
+        <span class="sep">|</span>
+        <span><strong>P2:</strong> <span class="key-badge">Arrows</span> Move <span class="sep">·</span> <span class="key-badge">K</span> Pass <span class="sep">·</span> <span class="key-badge">J</span> Shoot <span class="sep">·</span> <span class="key-badge">L</span> Switch</span>
+        <span class="sep">|</span>
+        <span><span class="key-badge">C</span> Cam <span class="sep">·</span> <span class="key-badge">Esc</span> Pause</span>
+      `;
+    } else {
+      arcadeFooterTextEl.innerHTML = `
+        <span>Controls: </span>
+        <span class="key-badge">WASD</span> Move
+        <span class="sep">·</span>
+        <span class="key-badge">X</span> Pass
+        <span class="sep">·</span>
+        <span class="key-badge">Space</span> Shoot / Tackle
+        <span class="sep">·</span>
+        <span class="key-badge">Q</span> Switch
+        <span class="sep">·</span>
+        <span class="key-badge">C</span> Camera
+        <span class="sep">·</span>
+        <span class="key-badge">Esc</span> Pause
+      `;
+    }
+  };
 
   // --- Screen State Manager ---
   const allOverlays = [
@@ -90,7 +158,9 @@ window.addEventListener('DOMContentLoaded', () => {
     quickMatchModal,
     preMatchOverlay,
     tournamentModal,
+    halfTimeModal,
     fullTimeModal,
+    matchMvpModal,
     championModal,
     settingsModal,
     helpModal
@@ -122,15 +192,94 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // --- Touch Controls Visibility & Fullscreen State ---
+  const TOUCH_MODE_KEY = 'pocket_football_touch_mode';
+  let touchControlsPref = 'auto';
+  try {
+    const savedTouchPref = localStorage.getItem(TOUCH_MODE_KEY);
+    if (savedTouchPref === 'auto' || savedTouchPref === 'on' || savedTouchPref === 'off') {
+      touchControlsPref = savedTouchPref;
+    }
+  } catch (e) {}
+
+  const isCoarsePointer = () =>
+    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0;
+
+  let hasDetectedTouch = isCoarsePointer();
+
+  let resetTouchJoystickVisual = () => {};
+
+  const shouldShowTouchControls = () => {
+    if (appState !== 'PLAYING') return false;
+    if (isLocalMultiplayerMatch) return false;
+    if (!activeEngine || activeEngine.isPaused || activeEngine.isFullTime) return false;
+    const anyOverlayOpen = allOverlays.some((o) => o && o.classList.contains('active'));
+    if (anyOverlayOpen) return false;
+    if (touchControlsPref === 'on') return true;
+    if (touchControlsPref === 'off') return false;
+    return hasDetectedTouch || isCoarsePointer();
+  };
+
+  const updateTouchControlsVisibility = () => {
+    const show = shouldShowTouchControls();
+    if (touchControlsOverlay) {
+      touchControlsOverlay.classList.toggle('hidden', !show);
+    }
+    if (!show) {
+      resetTouchJoystickVisual();
+    }
+    if (activeEngine && activeEngine.setTouchHudActive) {
+      activeEngine.setTouchHudActive(show);
+    }
+  };
+
+  window.addEventListener('touchstart', () => {
+    if (!hasDetectedTouch) {
+      hasDetectedTouch = true;
+      updateTouchControlsVisibility();
+    }
+  }, { passive: true });
+
+  // Helper to run a transition through a CrazyGames midgame ad with audio/pause safety
+  const runWithMidgameAd = (onComplete) => {
+    const wasMuted = audio.isMuted;
+    const wasPaused = activeEngine ? activeEngine.isPaused : false;
+    crazyGames.requestAd('midgame', {
+      onAdStart: () => {
+        audio.setMuted(true);
+        if (activeEngine && appState === 'PLAYING') {
+          activeEngine.setPaused(true);
+        }
+      },
+      onAdEnd: () => {
+        audio.setMuted(wasMuted);
+        if (activeEngine && appState === 'PLAYING' && !wasPaused && !activeEngine.isHalfTime && !activeEngine.isFullTime) {
+          activeEngine.setPaused(false);
+        }
+        if (onComplete) onComplete();
+      }
+    });
+  };
+
   // Transition back to Main Menu
   const returnToMainMenu = () => {
     appState = 'MENU';
+    isLocalMultiplayerMatch = false;
+    crazyGames.gameplayStop();
     if (activeEngine) {
+      activeEngine.setPaused(false);
       activeEngine.stop();
     }
     if (inGameHeader) {
       inGameHeader.classList.add('hidden');
     }
+    if (player2TagEl) {
+      player2TagEl.classList.add('hidden');
+    }
+    updateFooterControlsHint(false);
+    updateTouchControlsVisibility();
     updateTournamentBadge();
     showScreen(mainMenuOverlay);
 
@@ -138,13 +287,70 @@ window.addEventListener('DOMContentLoaded', () => {
     setupIdleMenuBackground();
   };
 
-  // --- Launch A Match (Quick Match or Tournament) ---
-  const startMatch = (homeTeamConfig, awayTeamConfig, durationSecs) => {
+  // Render Match Stats Comparison Bars inside Half-Time Modal
+  const showHalfTimeModal = ({ score, homeTeam, awayTeam, stats }) => {
+    crazyGames.gameplayStop();
+    const htHomeBadge = document.getElementById('htHomeBadge');
+    const htHomeName = document.getElementById('htHomeName');
+    const htHomeScore = document.getElementById('htHomeScore');
+    const htAwayBadge = document.getElementById('htAwayBadge');
+    const htAwayName = document.getElementById('htAwayName');
+    const htAwayScore = document.getElementById('htAwayScore');
+    const htStatsList = document.getElementById('htStatsList');
+
+    if (htHomeBadge) htHomeBadge.textContent = homeTeam.badge;
+    if (htHomeName) htHomeName.textContent = homeTeam.name;
+    if (htHomeScore) htHomeScore.textContent = score.blue;
+    if (htAwayBadge) htAwayBadge.textContent = awayTeam.badge;
+    if (htAwayName) htAwayName.textContent = awayTeam.name;
+    if (htAwayScore) htAwayScore.textContent = score.red;
+
+    if (htStatsList && stats) {
+      const homeColor = homeTeam.accentColor || '#38BDF8';
+      const awayColor = awayTeam.accentColor || '#F87171';
+      const rows = [
+        { label: 'Possession', blue: stats.possession?.blue ?? 50, red: stats.possession?.red ?? 50, suffix: '%' },
+        { label: 'Shots', blue: stats.shots?.blue ?? 0, red: stats.shots?.red ?? 0, suffix: '' },
+        { label: 'Assists', blue: stats.assists?.blue ?? 0, red: stats.assists?.red ?? 0, suffix: '' },
+        { label: 'Passes', blue: stats.passes?.blue ?? 0, red: stats.passes?.red ?? 0, suffix: '' },
+        { label: 'Tackles', blue: stats.tackles?.blue ?? 0, red: stats.tackles?.red ?? 0, suffix: '' },
+      ];
+
+      htStatsList.innerHTML = rows.map((row) => {
+        const total = row.blue + row.red;
+        const bluePct = total > 0 ? Math.round((row.blue / total) * 100) : 50;
+        const redPct = 100 - bluePct;
+        return `
+          <div class="stat-compare-row">
+            <div class="stat-compare-values">
+              <span class="stat-val-home" style="color: ${homeColor}">${row.blue}${row.suffix}</span>
+              <span class="stat-val-label">${row.label}</span>
+              <span class="stat-val-away" style="color: ${awayColor}">${row.red}${row.suffix}</span>
+            </div>
+            <div class="stat-compare-bar">
+              <div class="stat-bar-home" style="width: ${bluePct}%; background: ${homeColor};"></div>
+              <div class="stat-bar-away" style="width: ${redPct}%; background: ${awayColor};"></div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    showScreen(halfTimeModal);
+    updateTouchControlsVisibility();
+  };
+
+  // --- Launch A Match (Quick Match, Local 2P, or Tournament) ---
+  const startMatch = (homeTeamConfig, awayTeamConfig, durationSecs, isLocal2p = false) => {
     appState = 'PLAYING';
+    isLocalMultiplayerMatch = !!isLocal2p;
+    lastActiveIsLocal2p = isLocalMultiplayerMatch;
     hideAllOverlays();
 
     lastActiveHomeTeam = homeTeamConfig;
     lastActiveAwayTeam = awayTeamConfig;
+    lastActiveDuration = durationSecs;
+    lastMatchMvp = null;
 
     // Show in-game HUD header
     if (inGameHeader) {
@@ -177,25 +383,52 @@ window.addEventListener('DOMContentLoaded', () => {
       scoreRedEl.style.color = '#FFFFFF';
     }
     if (matchClockEl) matchClockEl.textContent = formatTime(durationSecs);
+    if (matchHalfBadgeEl) matchHalfBadgeEl.textContent = '1H';
+    if (playerTagEl && homeTeamConfig.roster?.fw) {
+      playerTagEl.textContent = `P1 · #${homeTeamConfig.roster.fw.number} FW`;
+    }
+    if (player2TagEl) {
+      player2TagEl.classList.toggle('hidden', !isLocalMultiplayerMatch);
+      if (awayTeamConfig.roster?.fw) {
+        player2TagEl.textContent = `P2 · #${awayTeamConfig.roster.fw.number} FW`;
+      }
+    }
+    updateFooterControlsHint(isLocalMultiplayerMatch);
 
     // Create New Engine instance
     activeEngine = new GameEngine(
       canvas,
       {
-        onScoreChanged: (score, scoringTeam) => {
+        onScoreChanged: (score) => {
           if (scoreBlueEl) scoreBlueEl.textContent = score.blue;
           if (scoreRedEl) scoreRedEl.textContent = score.red;
         },
-        onTimeUpdated: (remainingSeconds) => {
+        onTimeUpdated: (remainingSeconds, halfInfo) => {
           if (matchClockEl) {
             matchClockEl.textContent = formatTime(remainingSeconds);
-            if (activeEngine && activeEngine.isGoldenGoal) {
-              matchClockEl.textContent = `ET ${formatTime(remainingSeconds)}`;
+          }
+          if (matchHalfBadgeEl) {
+            if (halfInfo?.isGoldenGoal || (activeEngine && activeEngine.isGoldenGoal)) {
+              matchHalfBadgeEl.textContent = 'ET';
+            } else if (halfInfo?.half === 2 || (activeEngine && activeEngine.currentHalf === 2)) {
+              matchHalfBadgeEl.textContent = '2H';
+            } else {
+              matchHalfBadgeEl.textContent = '1H';
             }
           }
         },
-        onControlledPlayerChanged: (player) => {
-          if (playerTagEl) playerTagEl.textContent = `P1: #${player.number} (${player.role})`;
+        onHalfTime: (htPayload) => {
+          showHalfTimeModal(htPayload);
+        },
+        onSecondHalfStarted: () => {
+          if (matchHalfBadgeEl) matchHalfBadgeEl.textContent = '2H';
+        },
+        onControlledPlayerChanged: (player, slot = 'p1') => {
+          if (slot === 'p2') {
+            if (player2TagEl) player2TagEl.textContent = `P2 · #${player.number} ${player.role}`;
+          } else {
+            if (playerTagEl) playerTagEl.textContent = `P1 · #${player.number} ${player.role}`;
+          }
         },
         onCameraModeChanged: (mode) => {
           if (cameraBtn) {
@@ -203,7 +436,13 @@ window.addEventListener('DOMContentLoaded', () => {
           }
         },
         onGoldenGoalStarted: () => {
-          if (playerTagEl) playerTagEl.textContent = '⚡ GOLDEN GOAL: NEXT GOAL WINS! ⚡';
+          if (matchHalfBadgeEl) matchHalfBadgeEl.textContent = 'ET';
+          if (playerTagEl) {
+            playerTagEl.textContent = isLocalMultiplayerMatch
+              ? 'GOLDEN GOAL · NEXT SCORES'
+              : 'GOLDEN GOAL · NEXT SCORES WINS';
+          }
+          crazyGames.gameplayStart();
         },
         onMatchEnd: (results) => {
           handleMatchFinished(results);
@@ -214,15 +453,19 @@ window.addEventListener('DOMContentLoaded', () => {
         awayTeam: awayTeamConfig,
         duration: durationSecs,
         isKnockout: (currentMode === 'TOURNAMENT'),
+        isLocalMultiplayer: isLocalMultiplayerMatch,
+        difficulty: selectedDifficulty,
         audio: audio
       }
     );
 
     activeEngine.start();
+    updateTouchControlsVisibility();
+    crazyGames.gameplayStart();
   };
 
   // --- Show Pre-Match Broadcast Intro Screen ---
-  const showPreMatchIntro = (homeTeamConfig, awayTeamConfig, durationSecs) => {
+  const showPreMatchIntro = (homeTeamConfig, awayTeamConfig, durationSecs, isLocal2p = false) => {
     // Populate Left Card
     const preHomeBadge = document.getElementById('preHomeBadge');
     const preHomeName = document.getElementById('preHomeName');
@@ -232,6 +475,11 @@ window.addEventListener('DOMContentLoaded', () => {
     if (preHomeBadge) preHomeBadge.textContent = homeTeamConfig.badge;
     if (preHomeName) preHomeName.textContent = homeTeamConfig.name;
     if (preHomeCard) preHomeCard.style.borderColor = homeTeamConfig.accentColor || homeTeamConfig.shirtColor;
+    if (preHomeMeta) {
+      preHomeMeta.textContent = isLocal2p
+        ? 'Player 1 · WASD + Space / X / Q'
+        : 'Formation 1-1-1 · Home';
+    }
 
     if (preHomeLineup && homeTeamConfig.roster) {
       preHomeLineup.innerHTML = `
@@ -250,6 +498,11 @@ window.addEventListener('DOMContentLoaded', () => {
     if (preAwayBadge) preAwayBadge.textContent = awayTeamConfig.badge;
     if (preAwayName) preAwayName.textContent = awayTeamConfig.name;
     if (preAwayCard) preAwayCard.style.borderColor = awayTeamConfig.accentColor || awayTeamConfig.shirtColor;
+    if (preAwayMeta) {
+      preAwayMeta.textContent = isLocal2p
+        ? 'Player 2 · Arrows + J / K / L'
+        : 'Formation 1-1-1 · Away';
+    }
 
     if (preAwayLineup && awayTeamConfig.roster) {
       preAwayLineup.innerHTML = `
@@ -261,7 +514,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const preDurationText = document.getElementById('preDurationText');
     if (preDurationText) {
-      preDurationText.textContent = `${Math.floor(durationSecs / 60)}:00 ${currentMode === 'TOURNAMENT' ? 'CUP KNOCKOUT' : 'MATCH'}`;
+      if (isLocal2p) {
+        preDurationText.textContent = `${Math.floor(durationSecs / 60)}:00 LOCAL 2P VERSUS`;
+      } else {
+        const diffLabel = selectedDifficulty.toUpperCase();
+        preDurationText.textContent = `${Math.floor(durationSecs / 60)}:00 ${currentMode === 'TOURNAMENT' ? 'CUP KNOCKOUT' : 'MATCH'} · ${diffLabel}`;
+      }
     }
 
     showScreen(preMatchOverlay);
@@ -271,13 +529,16 @@ window.addEventListener('DOMContentLoaded', () => {
     if (kickoffBtn) {
       kickoffBtn.onclick = () => {
         clickSound();
-        startMatch(homeTeamConfig, awayTeamConfig, durationSecs);
+        startMatch(homeTeamConfig, awayTeamConfig, durationSecs, isLocal2p);
       };
     }
   };
 
   // --- Match Finished / Results Presentation with Comprehensive Tie Logic ---
-  const handleMatchFinished = ({ score, homeTeam, awayTeam, winner, isDraw, isGoldenGoalWin, isPenaltyShootout, penalties, scorer }) => {
+  const handleMatchFinished = ({ score, homeTeam, awayTeam, winner, isDraw, isGoldenGoalWin, isPenaltyShootout, penalties, mvp }) => {
+    crazyGames.gameplayStop();
+    lastMatchMvp = mvp || null;
+
     // Populate Results Screen
     const ftHomeBadge = document.getElementById('ftHomeBadge');
     const ftHomeName = document.getElementById('ftHomeName');
@@ -315,13 +576,12 @@ window.addEventListener('DOMContentLoaded', () => {
       if (tResult.champion) {
         // Player's team won the Grand Final: Tournament Champions!
         ftOutcome.textContent = `🏆 ${homeTeam.name.toUpperCase()} LIFT THE POCKET CUP!`;
+        crazyGames.happytime();
         setTimeout(() => {
           showChampionScreen(homeTeam);
         }, 2200);
       } else if (tResult.isEliminated) {
         if (tResult.isFinal) {
-          // Player reached the Grand Final but lost to awayTeam:
-          // The opposing team won the tournament and lifts the cup!
           if (isPenaltyShootout) {
             ftOutcome.textContent = `🥈 RUNNERS UP! ${awayTeam.name.toUpperCase()} WINS ON PENALTIES & LIFTS THE CUP! 🏆`;
           } else if (isGoldenGoalWin) {
@@ -330,7 +590,6 @@ window.addEventListener('DOMContentLoaded', () => {
             ftOutcome.textContent = `🥈 RUNNERS UP! ${awayTeam.name.toUpperCase()} WINS THE FINAL & LIFTS THE CUP! 🏆`;
           }
         } else {
-          // Earlier round defeat (Quarter-Finals or Semi-Finals)
           if (isPenaltyShootout) {
             ftOutcome.textContent = `❌ ELIMINATED ON PENALTIES! ${awayTeam.name.toUpperCase()} ADVANCES.`;
           } else if (isGoldenGoalWin) {
@@ -344,6 +603,9 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       } else {
         // Player won Quarter-Final or Semi-Final!
+        if (isGoldenGoalWin || isPenaltyShootout) {
+          crazyGames.happytime();
+        }
         const nextRoundName = tournament.roundNames[tournament.currentRoundIndex] || 'Next Round';
         if (isPenaltyShootout) {
           ftOutcome.textContent = `🎉 VICTORY ON PENALTIES! ADVANCING TO ${nextRoundName.toUpperCase()}!`;
@@ -362,9 +624,7 @@ window.addEventListener('DOMContentLoaded', () => {
       if (ftContinueTournamentBtn) ftContinueTournamentBtn.classList.add('hidden');
 
       if (isDraw || (!winner && score.blue === score.red)) {
-        // Authentic Draw!
         ftOutcome.textContent = `🤝 STALEMATE · MATCH DRAWN ${score.blue} - ${score.red}`;
-        // Show Golden Goal button for instant tie resolution
         if (ftGoldenGoalBtn) {
           ftGoldenGoalBtn.classList.remove('hidden');
           ftGoldenGoalBtn.onclick = () => {
@@ -373,9 +633,11 @@ window.addEventListener('DOMContentLoaded', () => {
             if (activeEngine) {
               activeEngine.startGoldenGoalExtraTime();
             }
+            updateTouchControlsVisibility();
           };
         }
       } else if (winner === 'blue') {
+        if (isGoldenGoalWin) crazyGames.happytime();
         ftOutcome.textContent = isGoldenGoalWin
           ? `⚡ GOLDEN GOAL! ${homeTeam.name.toUpperCase()} WINS!`
           : `🎉 ${homeTeam.name.toUpperCase()} WINS!`;
@@ -387,6 +649,59 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     showScreen(fullTimeModal);
+    updateTouchControlsVisibility();
+  };
+
+  // --- Match MVP Screen ---
+  const showMatchMvpScreen = () => {
+    const mvp = lastMatchMvp;
+    if (!mvp) return;
+
+    const roleNames = { GK: 'GOALKEEPER', DF: 'DEFENDER', FW: 'FORWARD' };
+    const badgeRole = document.getElementById('mvpBadgeRole');
+    const badgeRating = document.getElementById('mvpBadgeRating');
+    const jerseyCircle = document.getElementById('mvpJerseyCircle');
+    const numberDisplay = document.getElementById('mvpNumberDisplay');
+    const playerName = document.getElementById('mvpPlayerName');
+    const clubBadge = document.getElementById('mvpClubBadge');
+    const clubName = document.getElementById('mvpClubName');
+    const statGoals = document.getElementById('mvpStatGoals');
+    const statAssists = document.getElementById('mvpStatAssists');
+    const statTackles = document.getElementById('mvpStatTackles');
+    const statPasses = document.getElementById('mvpStatPasses');
+    const commentary = document.getElementById('mvpCommentary');
+    const mvpRematchBtn = document.getElementById('mvpRematchBtn');
+    const mvpContinueTournBtn = document.getElementById('mvpContinueTournBtn');
+
+    if (badgeRole) badgeRole.textContent = roleNames[mvp.role] || mvp.role || 'PLAYER';
+    if (badgeRating) badgeRating.textContent = `★ ${Number(mvp.rating || 8.0).toFixed(1)}`;
+    if (jerseyCircle && mvp.teamConfig) {
+      jerseyCircle.style.backgroundColor = mvp.role === 'GK'
+        ? (mvp.teamConfig.gkColor || '#F59E0B')
+        : (mvp.teamConfig.shirtColor || '#2563EB');
+    }
+    if (numberDisplay) numberDisplay.textContent = `#${mvp.number || 10}`;
+    if (playerName) playerName.textContent = mvp.name || 'MVP';
+    if (clubBadge) clubBadge.textContent = mvp.teamConfig?.badge || '⚽';
+    if (clubName) {
+      clubName.textContent = mvp.teamConfig?.name || 'Club';
+      clubName.style.color = mvp.teamConfig?.accentColor || '#38BDF8';
+    }
+    if (statGoals) statGoals.textContent = mvp.stats?.goals ?? 0;
+    if (statAssists) statAssists.textContent = mvp.stats?.assists ?? 0;
+    if (statTackles) statTackles.textContent = mvp.stats?.tackles ?? 0;
+    if (statPasses) statPasses.textContent = mvp.stats?.passes ?? 0;
+    if (commentary) commentary.textContent = mvp.narrative || '';
+
+    if (currentMode === 'TOURNAMENT') {
+      if (mvpRematchBtn) mvpRematchBtn.classList.add('hidden');
+      if (mvpContinueTournBtn) mvpContinueTournBtn.classList.remove('hidden');
+    } else {
+      if (mvpRematchBtn) mvpRematchBtn.classList.remove('hidden');
+      if (mvpContinueTournBtn) mvpContinueTournBtn.classList.add('hidden');
+    }
+
+    showScreen(matchMvpModal);
   };
 
   // --- Champion Screen ---
@@ -397,6 +712,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     audio.playGoalChime();
     audio.swellCrowd(1.0, 4.0);
+    crazyGames.happytime();
     showScreen(championModal);
   };
 
@@ -447,6 +763,35 @@ window.addEventListener('DOMContentLoaded', () => {
         awayPicker.appendChild(aCard);
       });
     }
+
+    // Mode Pills (1P vs AI / 2P Local)
+    const syncQuickModeUI = () => {
+      const is2p = selectedQuickPlayersMode === '2p';
+      document.querySelectorAll('#quickModePills .pill-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.playersMode === selectedQuickPlayersMode);
+      });
+      if (quickHomeColTitle) {
+        quickHomeColTitle.textContent = is2p ? 'Player 1 · Home (WASD + Space)' : 'Your Team · Home';
+      }
+      if (quickAwayColTitle) {
+        quickAwayColTitle.textContent = is2p ? 'Player 2 · Away (Arrows + J)' : 'Opponent · Away';
+      }
+      if (quickDifficultyBox) {
+        quickDifficultyBox.classList.toggle('hidden', is2p);
+      }
+    };
+
+    document.querySelectorAll('#quickModePills .pill-btn').forEach((btn) => {
+      btn.onclick = () => {
+        clickSound();
+        const mode = btn.dataset.playersMode;
+        if (mode === '1p' || mode === '2p') {
+          selectedQuickPlayersMode = mode;
+          syncQuickModeUI();
+        }
+      };
+    });
+    syncQuickModeUI();
 
     // Duration Pills
     const durationPills = document.querySelectorAll('#durationPills .pill-btn');
@@ -590,6 +935,18 @@ window.addEventListener('DOMContentLoaded', () => {
     startQuickMatchBtn.addEventListener('click', () => {
       clickSound();
       currentMode = 'QUICK_MATCH';
+      selectedQuickPlayersMode = '1p';
+      setupQuickMatchView();
+      showScreen(quickMatchModal);
+    });
+  }
+
+  const startLocal2pBtn = document.getElementById('startLocal2pBtn');
+  if (startLocal2pBtn) {
+    startLocal2pBtn.addEventListener('click', () => {
+      clickSound();
+      currentMode = 'QUICK_MATCH';
+      selectedQuickPlayersMode = '2p';
       setupQuickMatchView();
       showScreen(quickMatchModal);
     });
@@ -610,6 +967,9 @@ window.addEventListener('DOMContentLoaded', () => {
     openSettingsBtn.addEventListener('click', () => {
       clickSound();
       settingsReturnState = 'MENU';
+      if (settingsPausedBadge) settingsPausedBadge.classList.add('hidden');
+      if (pauseMatchActions) pauseMatchActions.classList.add('hidden');
+      if (doneSettingsBtn) doneSettingsBtn.textContent = 'Done';
       showScreen(settingsModal);
     });
   }
@@ -629,7 +989,7 @@ window.addEventListener('DOMContentLoaded', () => {
       clickSound();
       const homeTeam = TEAMS[quickMatchHomeTeamId] || TEAMS.waves;
       const awayTeam = TEAMS[quickMatchAwayTeamId] || TEAMS.strikers;
-      showPreMatchIntro(homeTeam, awayTeam, quickMatchDuration);
+      showPreMatchIntro(homeTeam, awayTeam, quickMatchDuration, selectedQuickPlayersMode === '2p');
     });
   }
 
@@ -688,14 +1048,54 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Half-Time Actions
+  const startSecondHalfBtn = document.getElementById('startSecondHalfBtn');
+  if (startSecondHalfBtn) {
+    startSecondHalfBtn.addEventListener('click', () => {
+      clickSound();
+      hideAllOverlays();
+      runWithMidgameAd(() => {
+        if (activeEngine) {
+          activeEngine.startSecondHalf();
+        }
+        crazyGames.gameplayStart();
+        updateTouchControlsVisibility();
+      });
+    });
+  }
+
+  const htReturnMenuBtn = document.getElementById('htReturnMenuBtn');
+  if (htReturnMenuBtn) {
+    htReturnMenuBtn.addEventListener('click', () => {
+      clickSound();
+      returnToMainMenu();
+    });
+  }
+
   // Full-time Actions
+  const triggerRematch = () => {
+    const homeTeam = lastActiveHomeTeam || TEAMS[quickMatchHomeTeamId] || TEAMS.waves;
+    const awayTeam = lastActiveAwayTeam || TEAMS[quickMatchAwayTeamId] || TEAMS.strikers;
+    const dur = lastActiveDuration || quickMatchDuration;
+    const is2p = lastActiveIsLocal2p;
+    runWithMidgameAd(() => {
+      showPreMatchIntro(homeTeam, awayTeam, dur, is2p);
+    });
+  };
+
+  const ftViewMvpBtn = document.getElementById('ftViewMvpBtn');
+  if (ftViewMvpBtn) {
+    ftViewMvpBtn.addEventListener('click', () => {
+      clickSound();
+      showMatchMvpScreen();
+    });
+  }
+
   const ftRematchBtn = document.getElementById('ftRematchBtn');
   if (ftRematchBtn) {
     ftRematchBtn.addEventListener('click', () => {
       clickSound();
-      const homeTeam = lastActiveHomeTeam || TEAMS[quickMatchHomeTeamId] || TEAMS.waves;
-      const awayTeam = lastActiveAwayTeam || TEAMS[quickMatchAwayTeamId] || TEAMS.strikers;
-      showPreMatchIntro(homeTeam, awayTeam, quickMatchDuration);
+      triggerRematch();
     });
   }
 
@@ -703,15 +1103,54 @@ window.addEventListener('DOMContentLoaded', () => {
   if (ftContinueTournamentBtn) {
     ftContinueTournamentBtn.addEventListener('click', () => {
       clickSound();
-      updateTournamentBadge();
-      renderTournamentBracket();
-      showScreen(tournamentModal);
+      runWithMidgameAd(() => {
+        updateTournamentBadge();
+        renderTournamentBracket();
+        showScreen(tournamentModal);
+      });
     });
   }
 
   const ftReturnMenuBtn = document.getElementById('ftReturnMenuBtn');
   if (ftReturnMenuBtn) {
     ftReturnMenuBtn.addEventListener('click', () => {
+      clickSound();
+      returnToMainMenu();
+    });
+  }
+
+  // Match MVP Modal Actions
+  const mvpBackToScoreBtn = document.getElementById('mvpBackToScoreBtn');
+  if (mvpBackToScoreBtn) {
+    mvpBackToScoreBtn.addEventListener('click', () => {
+      clickSound();
+      showScreen(fullTimeModal);
+    });
+  }
+
+  const mvpRematchBtn = document.getElementById('mvpRematchBtn');
+  if (mvpRematchBtn) {
+    mvpRematchBtn.addEventListener('click', () => {
+      clickSound();
+      triggerRematch();
+    });
+  }
+
+  const mvpContinueTournBtn = document.getElementById('mvpContinueTournBtn');
+  if (mvpContinueTournBtn) {
+    mvpContinueTournBtn.addEventListener('click', () => {
+      clickSound();
+      runWithMidgameAd(() => {
+        updateTournamentBadge();
+        renderTournamentBracket();
+        showScreen(tournamentModal);
+      });
+    });
+  }
+
+  const mvpReturnMenuBtn = document.getElementById('mvpReturnMenuBtn');
+  if (mvpReturnMenuBtn) {
+    mvpReturnMenuBtn.addEventListener('click', () => {
       clickSound();
       returnToMainMenu();
     });
@@ -725,44 +1164,282 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // In-Game HUD Controls with Hold-to-Charge Power Support
-  if (passBtn) {
-    const startPass = (e) => {
-      if (activeEngine) {
-        activeEngine.input.touchPassHeld = true;
-        activeEngine.input.passRequested = true;
-      }
-    };
-    const endPass = () => {
-      if (activeEngine) activeEngine.input.touchPassHeld = false;
-    };
-    passBtn.addEventListener('mousedown', startPass);
-    window.addEventListener('mouseup', endPass);
-    passBtn.addEventListener('touchstart', startPass, { passive: true });
-    passBtn.addEventListener('touchend', endPass, { passive: true });
-  }
+  // --- Fullscreen Toggle Logic ---
+  const getFullscreenElement = () =>
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.mozFullScreenElement ||
+    document.msFullscreenElement;
 
-  if (shootBtn) {
-    const startShoot = (e) => {
-      if (activeEngine) {
-        activeEngine.input.touchKickHeld = true;
-        activeEngine.input.kickRequested = true;
-      }
-    };
-    const endShoot = () => {
-      if (activeEngine) activeEngine.input.touchKickHeld = false;
-    };
-    shootBtn.addEventListener('mousedown', startShoot);
-    window.addEventListener('mouseup', endShoot);
-    shootBtn.addEventListener('touchstart', startShoot, { passive: true });
-    shootBtn.addEventListener('touchend', endShoot, { passive: true });
-  }
+  const updateFullscreenButtons = () => {
+    const active = !!getFullscreenElement();
+    if (fullscreenBtn) {
+      fullscreenBtn.textContent = active ? '⛶ Exit' : '⛶ Full';
+      fullscreenBtn.title = active ? 'Exit Full Screen' : 'Enter Full Screen';
+    }
+    if (menuFullscreenBtn) {
+      menuFullscreenBtn.textContent = active ? '⛶ Exit Full Screen' : '⛶ Full Screen';
+      menuFullscreenBtn.title = active ? 'Exit Full Screen' : 'Enter Full Screen';
+    }
+  };
 
-  if (switchPlayerBtn) {
-    switchPlayerBtn.addEventListener('click', () => {
-      if (activeEngine) activeEngine.switchControlledPlayer();
+  const toggleFullscreen = async () => {
+    const target = document.documentElement;
+    try {
+      if (!getFullscreenElement()) {
+        if (target.requestFullscreen) {
+          await target.requestFullscreen();
+        } else if (target.webkitRequestFullscreen) {
+          await target.webkitRequestFullscreen();
+        } else if (target.msRequestFullscreen) {
+          await target.msRequestFullscreen();
+        }
+      } else {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (document.webkitExitFullscreen) {
+          await document.webkitExitFullscreen();
+        } else if (document.msExitFullscreen) {
+          await document.msExitFullscreen();
+        }
+      }
+    } catch (e) {
+      // Gracefully ignore if browser or embedded context restricts fullscreen
+    }
+  };
+
+  [fullscreenBtn, menuFullscreenBtn].forEach((btn) => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        clickSound();
+        toggleFullscreen();
+      });
+    }
+  });
+
+  ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach((evt) => {
+    document.addEventListener(evt, () => {
+      updateFullscreenButtons();
+      if (activeEngine) {
+        setTimeout(() => activeEngine.resize(), 60);
+      }
     });
+  });
+
+  window.addEventListener('orientationchange', () => {
+    if (activeEngine) {
+      setTimeout(() => activeEngine.resize(), 120);
+    }
+    updateTouchControlsVisibility();
+  });
+
+  window.addEventListener('resize', () => {
+    updateTouchControlsVisibility();
+  });
+
+  updateFullscreenButtons();
+
+  // --- Mobile On-Screen Touch Controls (Multi-Touch Pointer Events) ---
+  if (touchControlsOverlay) {
+    touchControlsOverlay.addEventListener('contextmenu', (e) => e.preventDefault());
   }
+
+  if (touchJoystickZone && touchJoystickBase && touchJoystickKnob) {
+    let activeJoystickPointerId = null;
+    let anchorX = 0;
+    let anchorY = 0;
+    const maxRadius = 44;
+
+    resetTouchJoystickVisual = () => {
+      activeJoystickPointerId = null;
+      touchJoystickBase.classList.remove('active');
+      touchJoystickBase.style.transform = 'translate(0px, 0px)';
+      touchJoystickKnob.style.transform = 'translate(0px, 0px)';
+      if (activeEngine && activeEngine.input) {
+        activeEngine.input.setTouchJoystick(false, 0, 0);
+      }
+    };
+
+    const updateJoystickFromPoint = (clientX, clientY) => {
+      const rect = touchJoystickZone.getBoundingClientRect();
+      const localX = clientX - rect.left;
+      const localY = clientY - rect.top;
+
+      const dx = localX - anchorX;
+      const dy = localY - anchorY;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist <= 5) {
+        touchJoystickKnob.style.transform = 'translate(0px, 0px)';
+        if (activeEngine && activeEngine.input) {
+          activeEngine.input.setTouchJoystick(true, 0, 0);
+        }
+        return;
+      }
+
+      const clamped = Math.min(dist, maxRadius);
+      const nx = dx / dist;
+      const ny = dy / dist;
+      const ratio = clamped / maxRadius;
+
+      const knobX = nx * clamped;
+      const knobY = ny * clamped;
+      touchJoystickKnob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+
+      if (activeEngine && activeEngine.input) {
+        activeEngine.input.setTouchJoystick(true, nx * ratio, ny * ratio);
+      }
+    };
+
+    touchJoystickZone.addEventListener('pointerdown', (e) => {
+      if (activeJoystickPointerId !== null) return;
+      e.preventDefault();
+      hasDetectedTouch = true;
+      activeJoystickPointerId = e.pointerId;
+      try {
+        touchJoystickZone.setPointerCapture(e.pointerId);
+      } catch (err) {}
+
+      const rect = touchJoystickZone.getBoundingClientRect();
+      const localX = e.clientX - rect.left;
+      const localY = e.clientY - rect.top;
+      const pad = 42;
+      anchorX = Math.max(pad, Math.min(rect.width - pad, localX));
+      anchorY = Math.max(pad, Math.min(rect.height - pad, localY));
+
+      touchJoystickBase.classList.add('active');
+      touchJoystickBase.style.transform = `translate(${anchorX - rect.width / 2}px, ${anchorY - rect.height / 2}px)`;
+      updateJoystickFromPoint(e.clientX, e.clientY);
+    });
+
+    touchJoystickZone.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== activeJoystickPointerId) return;
+      e.preventDefault();
+      updateJoystickFromPoint(e.clientX, e.clientY);
+    });
+
+    const endJoystickPointer = (e) => {
+      if (e.pointerId !== activeJoystickPointerId) return;
+      e.preventDefault();
+      try {
+        touchJoystickZone.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      resetTouchJoystickVisual();
+    };
+
+    touchJoystickZone.addEventListener('pointerup', endJoystickPointer);
+    touchJoystickZone.addEventListener('pointercancel', endJoystickPointer);
+    touchJoystickZone.addEventListener('lostpointercapture', endJoystickPointer);
+  }
+
+  const bindTouchHoldButton = (btnEl, onStart, onEnd) => {
+    if (!btnEl) return;
+    let activePointerId = null;
+
+    btnEl.addEventListener('pointerdown', (e) => {
+      if (activePointerId !== null) return;
+      e.preventDefault();
+      hasDetectedTouch = true;
+      activePointerId = e.pointerId;
+      btnEl.classList.add('pressed');
+      try {
+        btnEl.setPointerCapture(e.pointerId);
+      } catch (err) {}
+      onStart();
+    });
+
+    const release = (e) => {
+      if (e.pointerId !== activePointerId) return;
+      e.preventDefault();
+      activePointerId = null;
+      btnEl.classList.remove('pressed');
+      try {
+        btnEl.releasePointerCapture(e.pointerId);
+      } catch (err) {}
+      onEnd();
+    };
+
+    btnEl.addEventListener('pointerup', release);
+    btnEl.addEventListener('pointercancel', release);
+    btnEl.addEventListener('lostpointercapture', release);
+  };
+
+  bindTouchHoldButton(
+    touchShootBtn,
+    () => activeEngine?.input?.startTouchKick(),
+    () => activeEngine?.input?.endTouchKick()
+  );
+
+  bindTouchHoldButton(
+    touchPassBtn,
+    () => activeEngine?.input?.startTouchPass(),
+    () => activeEngine?.input?.endTouchPass()
+  );
+
+  if (touchSwitchBtn) {
+    touchSwitchBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      hasDetectedTouch = true;
+      touchSwitchBtn.classList.add('pressed');
+      activeEngine?.input?.requestTouchSwitch();
+    });
+    const releaseSwitch = () => touchSwitchBtn.classList.remove('pressed');
+    touchSwitchBtn.addEventListener('pointerup', releaseSwitch);
+    touchSwitchBtn.addEventListener('pointercancel', releaseSwitch);
+    touchSwitchBtn.addEventListener('pointerleave', releaseSwitch);
+  }
+
+  // Touch Controls Mode Pills in Settings (Auto / On / Off)
+  const touchModePills = document.querySelectorAll('#touchModePills .pill-btn');
+  const syncTouchModePills = () => {
+    touchModePills.forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.touchMode === touchControlsPref);
+    });
+  };
+  syncTouchModePills();
+  touchModePills.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      clickSound();
+      const mode = btn.dataset.touchMode;
+      if (mode === 'auto' || mode === 'on' || mode === 'off') {
+        touchControlsPref = mode;
+        try {
+          localStorage.setItem(TOUCH_MODE_KEY, mode);
+        } catch (e) {}
+        syncTouchModePills();
+        updateTouchControlsVisibility();
+      }
+    });
+  });
+
+  // AI Difficulty Pills (synced across Quick Match, Tournament, and Settings)
+  const difficultyGroups = document.querySelectorAll('[data-difficulty-group]');
+  const syncDifficultyPills = () => {
+    difficultyGroups.forEach((group) => {
+      group.querySelectorAll('[data-difficulty]').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.difficulty === selectedDifficulty);
+      });
+    });
+  };
+  syncDifficultyPills();
+  difficultyGroups.forEach((group) => {
+    group.querySelectorAll('[data-difficulty]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        clickSound();
+        const diff = btn.dataset.difficulty;
+        if (diff === 'easy' || diff === 'normal' || diff === 'hard') {
+          selectedDifficulty = diff;
+          try {
+            localStorage.setItem(DIFFICULTY_KEY, diff);
+          } catch (e) {}
+          syncDifficultyPills();
+          if (activeEngine && !activeEngine.isMenuIdle && activeEngine.setDifficulty) {
+            activeEngine.setDifficulty(diff);
+          }
+        }
+      });
+    });
+  });
 
   if (cameraBtn) {
     cameraBtn.addEventListener('click', () => {
@@ -791,13 +1468,77 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const openPauseMenu = () => {
+    if (appState !== 'PLAYING' || !activeEngine || activeEngine.isFullTime || activeEngine.isHalfTime) return;
+    settingsReturnState = 'PLAYING';
+    activeEngine.setPaused(true);
+    crazyGames.gameplayStop();
+    if (settingsPausedBadge) settingsPausedBadge.classList.remove('hidden');
+    if (pauseMatchActions) pauseMatchActions.classList.remove('hidden');
+    if (doneSettingsBtn) doneSettingsBtn.textContent = 'Resume Match';
+    showScreen(settingsModal);
+    updateTouchControlsVisibility();
+  };
+
+  const closePauseAndResume = () => {
+    if (settingsPausedBadge) settingsPausedBadge.classList.add('hidden');
+    if (pauseMatchActions) pauseMatchActions.classList.add('hidden');
+    if (doneSettingsBtn) doneSettingsBtn.textContent = 'Done';
+    if (settingsReturnState === 'PLAYING' && appState === 'PLAYING') {
+      hideAllOverlays();
+      if (activeEngine) {
+        activeEngine.setPaused(false);
+      }
+      crazyGames.gameplayStart();
+      updateTouchControlsVisibility();
+    } else {
+      showScreen(mainMenuOverlay);
+    }
+  };
+
   if (headerSettingsBtn) {
     headerSettingsBtn.addEventListener('click', () => {
       clickSound();
-      settingsReturnState = 'PLAYING';
-      showScreen(settingsModal);
+      if (settingsModal && settingsModal.classList.contains('active') && settingsReturnState === 'PLAYING') {
+        closePauseAndResume();
+      } else {
+        openPauseMenu();
+      }
     });
   }
+
+  if (pauseRestartBtn) {
+    pauseRestartBtn.addEventListener('click', () => {
+      clickSound();
+      if (settingsPausedBadge) settingsPausedBadge.classList.add('hidden');
+      if (pauseMatchActions) pauseMatchActions.classList.add('hidden');
+      const home = lastActiveHomeTeam || TEAMS[quickMatchHomeTeamId] || TEAMS.waves;
+      const away = lastActiveAwayTeam || TEAMS[quickMatchAwayTeamId] || TEAMS.strikers;
+      startMatch(home, away, lastActiveDuration || quickMatchDuration, lastActiveIsLocal2p);
+    });
+  }
+
+  if (pauseMainMenuBtn) {
+    pauseMainMenuBtn.addEventListener('click', () => {
+      clickSound();
+      if (settingsPausedBadge) settingsPausedBadge.classList.add('hidden');
+      if (pauseMatchActions) pauseMatchActions.classList.add('hidden');
+      returnToMainMenu();
+    });
+  }
+
+  // Keyboard Escape / P Pause Toggle during Match
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'Escape' && e.code !== 'KeyP') return;
+    if (appState !== 'PLAYING' || !activeEngine || activeEngine.isFullTime || activeEngine.isHalfTime) return;
+    if (settingsModal && settingsModal.classList.contains('active') && settingsReturnState === 'PLAYING') {
+      e.preventDefault();
+      closePauseAndResume();
+    } else if (!allOverlays.some((o) => o && o.classList.contains('active'))) {
+      e.preventDefault();
+      openPauseMenu();
+    }
+  });
 
   // Mouse wheel zoom on canvas
   canvas.addEventListener('wheel', (e) => {
@@ -849,18 +1590,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Close Settings Modal: Always returns to where you opened it!
+  // Close Settings Modal: Always returns to where you opened it & unpauses!
   const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-  const doneSettingsBtn = document.getElementById('doneSettingsBtn');
   [closeSettingsBtn, doneSettingsBtn].forEach((btn) => {
     if (btn) {
       btn.addEventListener('click', () => {
         clickSound();
-        if (settingsReturnState === 'PLAYING' && appState === 'PLAYING') {
-          hideAllOverlays();
-        } else {
-          showScreen(mainMenuOverlay);
-        }
+        closePauseAndResume();
       });
     }
   });
@@ -876,6 +1612,11 @@ window.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
+
+  // Adaptive menu footer hint for touch vs desktop devices
+  if (menuControlsHint && isCoarsePointer()) {
+    menuControlsHint.textContent = 'Touch Controls Ready · Left thumb moves · Right buttons Pass, Shoot & Tackle';
+  }
 
   // --- Background Ambience for Menu ---
   const setupIdleMenuBackground = () => {

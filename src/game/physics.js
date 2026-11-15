@@ -55,6 +55,11 @@ export class PhysicsSystem {
   static resolvePlayerBall(player, ball, audio) {
     if (!ball) return;
 
+    // During protected kickoff / goal-kick restarts, opponents cannot steal or intercept the ball
+    if (ball.isRestartProtected && ball.carrier && ball.carrier.team !== player.team) {
+      return;
+    }
+
     const dx = ball.x - player.x;
     const dy = ball.y - player.y;
     const dist = Math.hypot(dx, dy);
@@ -62,35 +67,36 @@ export class PhysicsSystem {
 
     // 1. If ball is already carried by another player:
     if (ball.carrier && ball.carrier !== player) {
-      // Check for opponent tackling / dispossessing
-      if (ball.carrier.team !== player.team) {
-        const distToCarrier = Math.hypot(player.x - ball.carrier.x, player.y - ball.carrier.y);
+      // Only allow passive physical dispossession on very close direct ball contact
+      // (deliberate lunge tackles at TACKLE_RANGE are handled by timed performTackle)
+      if (
+        ball.carrier.team !== player.team &&
+        !player.isStumbled &&
+        player.tackleCooldown <= 0 &&
+        player.kickCooldown <= 0
+      ) {
+        const directBallDist = player.radius + ball.radius + 1;
         const tacklerSpeed = Math.hypot(player.vx, player.vy);
 
-        // Check facing direction towards carrier
-        const toCarrierAngle = Math.atan2(ball.carrier.y - player.y, ball.carrier.x - player.x);
-        let angleDiff = Math.abs(player.facingAngle - toCarrierAngle);
+        const toBallAngle = Math.atan2(ball.y - player.y, ball.x - player.x);
+        let angleDiff = Math.abs(player.facingAngle - toBallAngle);
         if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
 
-        // Challenge condition: close distance, active movement, and facing opponent
-        if (distToCarrier <= PHYSICS.TACKLE_RANGE && tacklerSpeed > 35 && angleDiff < 1.45) {
+        if (dist <= directBallDist && tacklerSpeed > 65 && angleDiff < 1.05) {
           const victim = ball.carrier;
-          ball.carrier = null;
-          victim.isStumbled = true;
-          victim.stumbleTimer = 0.35;
-          victim.vx *= 0.25;
-          victim.vy *= 0.25;
-
-          // Dislodge ball in tackle direction
-          const tackleAngle = Math.atan2(ball.y - player.y, ball.x - player.x);
-          ball.vx = Math.cos(tackleAngle) * 180;
-          ball.vy = Math.sin(tackleAngle) * 180;
+          ball.carrier = player;
           ball.lastKickedBy = player;
+          ball.pendingPassFrom = null;
+          ball.lastPassInfo = null;
+          ball.shotAtGoalTeam = null;
 
-          // If close enough or tackler moving aggressively, tackler wins possession
-          if (dist <= player.radius + ball.radius + 8) {
-            ball.carrier = player;
-          }
+          victim.isStumbled = true;
+          victim.stumbleTimer = 0.42;
+          victim.tackleCooldown = 0.65;
+          victim.vx *= 0.35;
+          victim.vy *= 0.35;
+
+          player.tackleCooldown = 0.75;
 
           if (player.stats) {
             player.stats.tackles = (player.stats.tackles || 0) + 1;
@@ -102,8 +108,31 @@ export class PhysicsSystem {
       return;
     }
 
-    // 2. Loose ball pickup: take sticky possession when in contact
-    if (!ball.carrier && ball.z <= 26 && dist <= contactDist) {
+    // 2. Loose ball pickup / GK save: take sticky possession when in contact
+    const maxCatchZ = player.role === 'GK' ? 44 : 26;
+    if (!ball.carrier && ball.z <= maxCatchZ && dist <= contactDist && !player.isStumbled && player.kickCooldown <= 0) {
+      if (ball.isRestartProtected) return;
+      if (ball.pendingPassFrom) {
+        if (
+          ball.pendingPassFrom !== player &&
+          ball.pendingPassFrom.team === player.team
+        ) {
+          if (ball.pendingPassFrom.stats) {
+            ball.pendingPassFrom.stats.passes = (ball.pendingPassFrom.stats.passes || 0) + 1;
+          }
+          ball.lastPassInfo = {
+            passer: ball.pendingPassFrom,
+            team: player.team,
+            ttl: 6.0,
+          };
+        } else if (ball.pendingPassFrom.team !== player.team) {
+          ball.lastPassInfo = null;
+        }
+        ball.pendingPassFrom = null;
+      } else if (ball.lastPassInfo && ball.lastPassInfo.team !== player.team) {
+        ball.lastPassInfo = null;
+      }
+      ball.shotAtGoalTeam = null;
       ball.carrier = player;
       ball.lastKickedBy = player;
       if (audio) audio.playTap();

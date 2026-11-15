@@ -46,8 +46,8 @@ export const PHYSICS = {
   PLAYER_SPRINT_MULT: 1.25,
   
   // Shooting, Passing & Tackling
-  SHOT_POWER: 520,
-  SHOT_HEIGHT: 44,    // Driven shot under or kissing crossbar
+  SHOT_POWER: 540,
+  SHOT_HEIGHT: 155,   // Driven shot arc (~15 units peak Z, well under 70 crossbar)
   PASS_POWER: 410,    // Crisp ground pass
   PASS_HEIGHT: 0,     // Strictly ground roll
   DRIBBLE_DIST: 24,   // Distance from player center to ball while dribbling
@@ -75,9 +75,9 @@ export const TEAMS = {
     gkColor: '#FFB703',
     gkShorts: '#212529',
     roster: {
-      gk: { name: 'Casillas', number: 1 },
-      df: { name: 'Maldini', number: 4 },
-      fw: { name: 'Messi', number: 10 }
+      gk: { name: 'Casillos', number: 1 },
+      df: { name: 'Maldeni', number: 4 },
+      fw: { name: 'Massi', number: 10 }
     }
   },
   strikers: {
@@ -95,9 +95,9 @@ export const TEAMS = {
     gkColor: '#06D6A0',
     gkShorts: '#114B3E',
     roster: {
-      gk: { name: 'Buffon', number: 1 },
-      df: { name: 'Nesta', number: 3 },
-      fw: { name: 'Ronaldo', number: 9 }
+      gk: { name: 'Baffon', number: 1 },
+      df: { name: 'Nesto', number: 3 },
+      fw: { name: 'Ronaldi', number: 9 }
     }
   },
   blancos: {
@@ -115,9 +115,9 @@ export const TEAMS = {
     gkColor: '#0284C7',
     gkShorts: '#0F172A',
     roster: {
-      gk: { name: 'Courtois', number: 1 },
-      df: { name: 'Ramos', number: 4 },
-      fw: { name: 'Mbappe', number: 7 }
+      gk: { name: 'Courtoas', number: 1 },
+      df: { name: 'Ramas', number: 4 },
+      fw: { name: 'Mbeppe', number: 7 }
     }
   },
   blau: {
@@ -135,9 +135,9 @@ export const TEAMS = {
     gkColor: '#10B981',
     gkShorts: '#064E3B',
     roster: {
-      gk: { name: 'Ter Stegen', number: 1 },
-      df: { name: 'Puyol', number: 5 },
-      fw: { name: 'Ronaldinho', number: 10 }
+      gk: { name: 'Ter Stagen', number: 1 },
+      df: { name: 'Puyal', number: 5 },
+      fw: { name: 'Ronaldenho', number: 10 }
     }
   },
   devils: {
@@ -155,9 +155,9 @@ export const TEAMS = {
     gkColor: '#EAB308',
     gkShorts: '#18181B',
     roster: {
-      gk: { name: 'Dida', number: 1 },
-      df: { name: 'Baresi', number: 6 },
-      fw: { name: 'Kaka', number: 22 }
+      gk: { name: 'Deda', number: 1 },
+      df: { name: 'Bareso', number: 6 },
+      fw: { name: 'Keka', number: 22 }
     }
   },
   titans: {
@@ -175,9 +175,9 @@ export const TEAMS = {
     gkColor: '#6366F1',
     gkShorts: '#1E1B4B',
     roster: {
-      gk: { name: 'Neuer', number: 1 },
-      df: { name: 'Lahm', number: 21 },
-      fw: { name: 'Muller', number: 25 }
+      gk: { name: 'Neuar', number: 1 },
+      df: { name: 'Lehm', number: 21 },
+      fw: { name: 'Mullor', number: 25 }
     }
   },
   gunners: {
@@ -195,9 +195,9 @@ export const TEAMS = {
     gkColor: '#14B8A6',
     gkShorts: '#134E4A',
     roster: {
-      gk: { name: 'Seaman', number: 1 },
-      df: { name: 'Adams', number: 6 },
-      fw: { name: 'Henry', number: 14 }
+      gk: { name: 'Seamon', number: 1 },
+      df: { name: 'Adems', number: 6 },
+      fw: { name: 'Hanry', number: 14 }
     }
   },
   stars: {
@@ -215,9 +215,9 @@ export const TEAMS = {
     gkColor: '#F59E0B',
     gkShorts: '#0F172A',
     roster: {
-      gk: { name: 'Donnarumma', number: 99 },
-      df: { name: 'Marquinhos', number: 5 },
-      fw: { name: 'Neymar', number: 11 }
+      gk: { name: 'Donnaromma', number: 99 },
+      df: { name: 'Marquinhas', number: 5 },
+      fw: { name: 'Neymor', number: 11 }
     }
   }
 };
@@ -232,6 +232,61 @@ export const MATCH_DURATIONS = [
   { label: '3 Min', value: 180, desc: 'Standard' },
   { label: '5 Min', value: 300, desc: 'Pro' }
 ];
+
+// AI Difficulty Profiles (applied to opponent team)
+export const DIFFICULTIES = {
+  easy: {
+    id: 'easy',
+    label: 'Easy',
+    aiSpeedMult: 0.78,
+    aiAccelMult: 0.72,
+    aiPassDelay: 0.62,
+    aiShootRange: 215,
+    aiShotSpeedMult: 0.85,
+    aiTackleRangeMult: 0.88,
+    aiTackleReaction: 0.28,
+    aiTackleCooldownMin: 2.4,
+    aiTackleCooldownMax: 3.4,
+    aiPressRange: 230,
+    aiGkTrackMult: 0.52,
+    aiGkBoxThreatRange: 115,
+    aiPredictShots: false,
+  },
+  normal: {
+    id: 'normal',
+    label: 'Normal',
+    aiSpeedMult: 1.0,
+    aiAccelMult: 1.0,
+    aiPassDelay: 0.34,
+    aiShootRange: 270,
+    aiShotSpeedMult: 1.0,
+    aiTackleRangeMult: 1.0,
+    aiTackleReaction: 0.16,
+    aiTackleCooldownMin: 1.7,
+    aiTackleCooldownMax: 2.5,
+    aiPressRange: 320,
+    aiGkTrackMult: 0.82,
+    aiGkBoxThreatRange: 165,
+    aiPredictShots: false,
+  },
+  hard: {
+    id: 'hard',
+    label: 'Hard',
+    aiSpeedMult: 1.08,
+    aiAccelMult: 1.15,
+    aiPassDelay: 0.22,
+    aiShootRange: 335,
+    aiShotSpeedMult: 1.12,
+    aiTackleRangeMult: 1.04,
+    aiTackleReaction: 0.10,
+    aiTackleCooldownMin: 1.15,
+    aiTackleCooldownMax: 1.75,
+    aiPressRange: 420,
+    aiGkTrackMult: 1.05,
+    aiGkBoxThreatRange: 195,
+    aiPredictShots: true,
+  },
+};
 
 // Fallback legacy team references for backward compatibility
 TEAMS.BLUE = TEAMS.waves;

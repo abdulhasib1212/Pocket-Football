@@ -20,7 +20,11 @@ export class Ball {
     this.spinAxisY = 0;
 
     this.lastKickedBy = null;
+    this.pendingPassFrom = null;
+    this.lastPassInfo = null;
+    this.shotAtGoalTeam = null;
     this.carrier = null; // Currently controlling dribbler
+    this.isRestartProtected = false;
     this.trail = [];
   }
 
@@ -32,11 +36,24 @@ export class Ball {
     this.vy = 0;
     this.vz = 0;
     this.lastKickedBy = null;
+    this.pendingPassFrom = null;
+    this.lastPassInfo = null;
+    this.shotAtGoalTeam = null;
     this.carrier = null;
+    this.isRestartProtected = false;
     this.trail = [];
   }
 
   update(dt, onGoalScored, onGoalKick, audio) {
+    if (this.lastPassInfo) {
+      this.lastPassInfo.ttl -= dt;
+      if (
+        this.lastPassInfo.ttl <= 0 ||
+        (this.carrier && this.carrier.team !== this.lastPassInfo.team)
+      ) {
+        this.lastPassInfo = null;
+      }
+    }
     // A. Close-control sticky dribbling (EAFC style)
     if (this.carrier) {
       if (this.carrier.isStumbled || this.carrier.kickCooldown > 0.05) {
@@ -119,6 +136,13 @@ export class Ball {
       this.vy = 0;
     }
 
+    // Clear active shot tracking if ball slowed down or rebounded away from target goal
+    if (this.shotAtGoalTeam === 'blue' && (this.vx > 20 || speed < 55)) {
+      this.shotAtGoalTeam = null;
+    } else if (this.shotAtGoalTeam === 'red' && (this.vx < -20 || speed < 55)) {
+      this.shotAtGoalTeam = null;
+    }
+
     // 5. Pitch boundary collisions, Crossbar, Posts, and Goal Detection
     this.handleBoundaries(onGoalScored, onGoalKick, audio);
 
@@ -168,16 +192,27 @@ export class Ball {
           this.x = -halfW - goalDepth + this.radius;
           this.vx = -this.vx * 0.25; // Cushioned by back net
           this.vy *= 0.7;
-          if (onGoalScored) onGoalScored('red'); // Red scored in Blue's goal
+          if (onGoalScored) {
+            this.pendingPassFrom = null;
+            this.shotAtGoalTeam = null;
+            onGoalScored('red'); // Red scored in Blue's goal
+          }
         }
         if (Math.abs(this.y) > halfGoalW - this.radius - 2) {
           this.vy = -this.vy * 0.3; // Cushioned by side net
         }
       } else {
         // Over the crossbar or wide! Out of bounds behind goal
-        if (this.x < -halfW - 35) {
+        const ballSpeed = Math.hypot(this.vx, this.vy);
+        if (
+          this.x < -halfW - this.radius * 1.25 ||
+          (this.x < -halfW - this.radius && ballSpeed < 30)
+        ) {
           this.vx *= 0.5;
           this.vy *= 0.5;
+          this.pendingPassFrom = null;
+          this.lastPassInfo = null;
+          this.shotAtGoalTeam = null;
           if (onGoalKick) onGoalKick('blue'); // Blue gets goal kick
         }
         // Keep within reasonable stadium boundary
@@ -196,16 +231,27 @@ export class Ball {
           this.x = halfW + goalDepth - this.radius;
           this.vx = -this.vx * 0.25;
           this.vy *= 0.7;
-          if (onGoalScored) onGoalScored('blue'); // Blue scored in Red's goal
+          if (onGoalScored) {
+            this.pendingPassFrom = null;
+            this.shotAtGoalTeam = null;
+            onGoalScored('blue'); // Blue scored in Red's goal
+          }
         }
         if (Math.abs(this.y) > halfGoalW - this.radius - 2) {
           this.vy = -this.vy * 0.3;
         }
       } else {
         // Over the crossbar or wide! Out of bounds behind goal
-        if (this.x > halfW + 35) {
+        const ballSpeed = Math.hypot(this.vx, this.vy);
+        if (
+          this.x > halfW + this.radius * 1.25 ||
+          (this.x > halfW + this.radius && ballSpeed < 30)
+        ) {
           this.vx *= 0.5;
           this.vy *= 0.5;
+          this.pendingPassFrom = null;
+          this.lastPassInfo = null;
+          this.shotAtGoalTeam = null;
           if (onGoalKick) onGoalKick('red'); // Red gets goal kick
         }
         if (this.x > halfW + 80) {

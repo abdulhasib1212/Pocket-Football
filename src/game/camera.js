@@ -41,7 +41,7 @@ export class Camera {
     this.userZoomMultiplier = Math.max(0.7, Math.min(1.4, this.userZoomMultiplier + delta));
   }
 
-  update(controlledPlayer, ball, dt) {
+  update(controlledPlayer, ball, dt, secondPlayer = null) {
     const vw = this.viewportWidth;
     const vh = this.viewportHeight;
 
@@ -53,11 +53,31 @@ export class Camera {
     const fitScaleH = vh / pitchTotalH;
     const fullFitScale = Math.min(fitScaleW, fitScaleH);
 
+    const minOverviewZoom = vh < 520 ? 0.34 : 0.55;
+    const minFollowZoom = vh < 520 ? 0.42 : 0.65;
+
     if (this.mode === 'OVERVIEW') {
       // OVERVIEW: Centers pitch and frames entire stadium
       this.targetX = 0;
       this.targetY = 0;
-      this.targetZoom = Math.max(0.55, fullFitScale * 0.98);
+      this.targetZoom = Math.max(minOverviewZoom, fullFitScale * 0.98);
+    } else if (controlledPlayer && secondPlayer) {
+      // LOCAL 2P FOLLOW MODE: Keep both human players and the ball in view
+      const bX = ball ? ball.x : (controlledPlayer.x + secondPlayer.x) * 0.5;
+      const bY = ball ? ball.y : (controlledPlayer.y + secondPlayer.y) * 0.5;
+      const minX = Math.min(controlledPlayer.x, secondPlayer.x, bX);
+      const maxX = Math.max(controlledPlayer.x, secondPlayer.x, bX);
+      const minY = Math.min(controlledPlayer.y, secondPlayer.y, bY);
+      const maxY = Math.max(controlledPlayer.y, secondPlayer.y, bY);
+
+      this.targetX = (minX + maxX) * 0.32 + bX * 0.36;
+      this.targetY = (minY + maxY) * 0.32 + bY * 0.36;
+
+      const spanW = Math.max(420, (maxX - minX) + 320);
+      const spanH = Math.max(300, (maxY - minY + 240) * PHYSICS.TILT_Y);
+      const fit2P = Math.min(vw / spanW, vh / spanH) * this.userZoomMultiplier;
+      const baseWide = Math.min(1.02, Math.max(minFollowZoom, fitScaleH * 1.05)) * this.userZoomMultiplier;
+      this.targetZoom = Math.max(Math.max(minOverviewZoom, fullFitScale * 0.96), Math.min(baseWide, fit2P));
     } else {
       // FOLLOW MODE: Wide, dynamic arcade camera that always moves with the player
       if (controlledPlayer) {
@@ -80,8 +100,11 @@ export class Camera {
 
       // Calculate wide, readable arcade zoom:
       // Wide enough so you can see plenty of pitch, teammates, and opponents without feeling claustrophobic
-      const wideZoom = Math.min(1.05, Math.max(0.65, fitScaleH * 1.08)) * this.userZoomMultiplier;
+      const wideZoom = Math.min(1.05, Math.max(minFollowZoom, fitScaleH * 1.08)) * this.userZoomMultiplier;
       this.targetZoom = wideZoom;
+    }
+
+    if (this.mode !== 'OVERVIEW') {
 
       // Smart dynamic camera boundary clamping:
       // Prevents showing infinite void outside stadium while guaranteeing the player is never cut off
