@@ -558,7 +558,10 @@ export class Player {
           this.stats.tackles = (this.stats.tackles || 0) + 1;
         }
 
-        if (audio) audio.playTackle();
+        if (audio) {
+          audio.playTackle();
+          if (audio.playCrowdCheer) audio.playCrowdCheer(0.5);
+        }
         return true;
       }
     }
@@ -575,7 +578,10 @@ export class Player {
         ball.lastPassInfo = null;
         ball.shotAtGoalTeam = null;
         this.tackleCooldown = 0.62;
-        if (audio) audio.playTackle();
+        if (audio) {
+          audio.playTackle();
+          if (this.role === 'GK' && audio.playCrowdCheer) audio.playCrowdCheer(0.8);
+        }
         return true;
       }
     }

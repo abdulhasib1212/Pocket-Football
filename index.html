@@ -516,8 +516,19 @@
 
               <div class="setting-row">
                 <div class="setting-info">
+                  <div class="setting-name">Music &amp; Stadium</div>
+                  <div class="setting-sub">Themes, stadium chants &amp; ambience</div>
+                </div>
+                <div class="slider-control">
+                  <input type="range" id="musicVolumeSlider" min="0" max="100" value="65" class="arcade-slider" />
+                  <span id="musicVolumeVal" class="slider-val">65%</span>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-info">
                   <div class="setting-name">Sound Effects</div>
-                  <div class="setting-sub">Kicks, passes, tackles, whistles</div>
+                  <div class="setting-sub">Kicks, passes, tackles, goals, whistles</div>
                 </div>
                 <div class="slider-control">
                   <input type="range" id="sfxVolumeSlider" min="0" max="100" value="90" class="arcade-slider" />
@@ -528,7 +539,7 @@
               <div class="setting-row">
                 <div class="setting-info">
                   <div class="setting-name">Mute All Audio</div>
-                  <div class="setting-sub">Silence all match sound effects</div>
+                  <div class="setting-sub">Silence all music and sound effects</div>
                 </div>
                 <button id="muteToggleBtn" class="arcade-btn" type="button">
                   Mute Audio

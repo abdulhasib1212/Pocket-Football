@@ -33,10 +33,17 @@ export class GameEngine {
       startCrowdAmbience() {},
       stopCrowdAmbience() {},
       swellCrowd() {},
+      updateCrowdExcitement() {},
+      setCrowdPaused() {},
+      playGoalCelebration() {},
+      playCrowdCheer() {},
+      playCrowdMiss() {},
+      playFinalWhistleCrowd() {},
     };
     this.audio = isSilent ? silentAudio : (options.audio || new AudioManager());
     this.isMenuIdle = !!options.isMenuIdle;
     this.isLocalMultiplayer = !!options.isLocalMultiplayer;
+    this.isTournamentFinal = !!options.isTournamentFinal;
     this.camera = new Camera(canvas);
     this.pitch = new Pitch();
     this.ball = new Ball();
@@ -54,6 +61,9 @@ export class GameEngine {
       targetGoalX: -PITCH.WIDTH / 2,
       ownGoalX: PITCH.WIDTH / 2,
     });
+    if (this.pitch.setTeamColors) {
+      this.pitch.setTeamColors(this.homeTeam, this.awayTeam);
+    }
 
     // Match Rules
     this.isKnockout = !!options.isKnockout;
@@ -514,6 +524,9 @@ export class GameEngine {
     this.ball.lastPassInfo = null;
 
     this.audio.playGoalChime();
+    if (this.audio.playGoalCelebration) {
+      this.audio.playGoalCelebration(scoringTeamId);
+    }
     this.audio.playWhistle();
 
     if (this.uiHooks.onScoreChanged) {
@@ -533,6 +546,10 @@ export class GameEngine {
     if (this.isGoldenGoal) {
       this.isFullTime = true;
       this.audio.playFullTimeWhistle();
+      if (this.audio.playFinalWhistleCrowd) {
+        const outcome = (scoringTeamId === 'blue' || this.isLocalMultiplayer) ? 'celebration' : 'disappointment';
+        this.audio.playFinalWhistleCrowd(outcome);
+      }
       if (this.uiHooks.onMatchEnd) {
         setTimeout(() => {
           this.uiHooks.onMatchEnd({
@@ -552,7 +569,7 @@ export class GameEngine {
     }
   }
 
-  handleGoalKick(defendingTeam) {
+  handleGoalKick(defendingTeam, wasMissedShot = false) {
     if (this.goalCelebrationTimer > 0 || this.isFullTime) return;
     this.clearRestartProtection();
     this.isChargingShot = false;
@@ -570,6 +587,9 @@ export class GameEngine {
     this.ball.reset(restartX, 0, 0);
     if (!this.isMenuIdle) {
       this.audio.playWhistle();
+      if (wasMissedShot && this.audio.playCrowdMiss) {
+        this.audio.playCrowdMiss();
+      }
     }
 
     // Position defending GK cleanly with the ball to take the goal kick
@@ -918,6 +938,10 @@ export class GameEngine {
               const pHome = Math.random() + (diff * 0.05) > 0.48 ? 5 : 4;
               const pAway = pHome === 5 ? 4 : 5;
               const winnerKey = pHome > pAway ? 'blue' : 'red';
+              if (this.audio.playFinalWhistleCrowd) {
+                const outcome = (winnerKey === 'blue' || this.isLocalMultiplayer) ? 'celebration' : 'disappointment';
+                this.audio.playFinalWhistleCrowd(outcome);
+              }
 
               if (this.uiHooks.onMatchEnd) {
                 this.uiHooks.onMatchEnd({
@@ -937,6 +961,9 @@ export class GameEngine {
             // Quick Match: Genuine Fair Draw!
             this.isFullTime = true;
             this.audio.playFullTimeWhistle();
+            if (this.audio.playFinalWhistleCrowd) {
+              this.audio.playFinalWhistleCrowd('draw');
+            }
 
             if (this.uiHooks.onMatchEnd) {
               this.uiHooks.onMatchEnd({
@@ -957,6 +984,10 @@ export class GameEngine {
           this.audio.playFullTimeWhistle();
 
           let winner = this.score.blue > this.score.red ? 'blue' : 'red';
+          if (this.audio.playFinalWhistleCrowd) {
+            const outcome = (winner === 'blue' || this.isLocalMultiplayer) ? 'celebration' : 'disappointment';
+            this.audio.playFinalWhistleCrowd(outcome);
+          }
           if (this.uiHooks.onMatchEnd) {
             this.uiHooks.onMatchEnd({
               score: Object.assign({}, this.score),
@@ -973,8 +1004,19 @@ export class GameEngine {
       }
     }
 
-    // 1. Update pitch flags & ambient elements
-    this.pitch.update(dt);
+    // 1. Update pitch flags & dynamic stadium crowd excitement
+    const liveDangerNorm = (!this.isMenuIdle && !this.isKickoff)
+      ? Math.max(
+          Math.max(0, Math.min(1, (Math.abs(this.ball.x) - 180) / (PITCH.WIDTH / 2 - 210))),
+          this.ball.shotAtGoalTeam ? 0.85 : 0
+        )
+      : 0;
+    this.pitch.update(dt, {
+      dangerNorm: liveDangerNorm,
+      isGoalCelebration: this.goalCelebrationTimer > 0,
+      scoringTeam: this.scoringTeam,
+      isTournamentFinal: this.isTournamentFinal,
+    });
 
     // 2. Update all 6 players (frozen during kickoff countdown)
     const effectiveMoveP1 = this.isKickoff ? { x: 0, y: 0 } : moveDir;
@@ -1006,7 +1048,7 @@ export class GameEngine {
       this.ball.update(
         dt,
         (scoringTeam) => this.handleGoal(scoringTeam),
-        (defendingTeam) => this.handleGoalKick(defendingTeam),
+        (defendingTeam, wasMissedShot) => this.handleGoalKick(defendingTeam, wasMissedShot),
         this.audio
       );
 
@@ -1020,6 +1062,16 @@ export class GameEngine {
     // 6. Auto-Switch to closest teammate / GK on incoming shots
     if (!this.isKickoff && !this.isFullTime && !this.isMenuIdle) {
       this.checkAutoSwitch();
+    }
+
+    // 7. Dynamic stadium crowd excitement & occasional chants
+    if (!this.isMenuIdle && !this.isFullTime && !this.isHalfTime && this.audio.updateCrowdExcitement) {
+      let dangerNorm = 0;
+      if (!this.isKickoff) {
+        const goalProx = Math.max(0, Math.min(1, (Math.abs(this.ball.x) - 180) / (PITCH.WIDTH / 2 - 210)));
+        dangerNorm = this.ball.shotAtGoalTeam ? Math.max(goalProx, 0.85) : goalProx;
+      }
+      this.audio.updateCrowdExcitement(dangerNorm, dt);
     }
   }
 
@@ -1318,6 +1370,11 @@ export class GameEngine {
     sortedEntities.forEach((entity) => {
       entity.render(ctx, this.camera);
     });
+
+    // 2A. Foreground Stadium Stand & Elevated Floodlight Halos (in front of bottom apron)
+    if (this.pitch.renderForeground) {
+      this.pitch.renderForeground(ctx, this.camera);
+    }
 
     // 2B. Assisted Shot Aim Preview Line (shown while charging a shot)
     if (!this.isMenuIdle) {

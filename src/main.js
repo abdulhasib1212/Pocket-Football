@@ -268,6 +268,9 @@ window.addEventListener('DOMContentLoaded', () => {
     appState = 'MENU';
     isLocalMultiplayerMatch = false;
     crazyGames.gameplayStop();
+    audio.stopCrowdAmbience();
+    audio.setMusicDucked(false);
+    audio.setMusicTrack('menu');
     if (activeEngine) {
       activeEngine.setPaused(false);
       activeEngine.stop();
@@ -290,6 +293,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // Render Match Stats Comparison Bars inside Half-Time Modal
   const showHalfTimeModal = ({ score, homeTeam, awayTeam, stats }) => {
     crazyGames.gameplayStop();
+    audio.stopCrowdAmbience();
+    audio.setMusicDucked(false);
+    audio.setMusicTrack('halftime');
     const htHomeBadge = document.getElementById('htHomeBadge');
     const htHomeName = document.getElementById('htHomeName');
     const htHomeScore = document.getElementById('htHomeScore');
@@ -342,6 +348,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // --- Launch A Match (Quick Match, Local 2P, or Tournament) ---
   const startMatch = (homeTeamConfig, awayTeamConfig, durationSecs, isLocal2p = false) => {
+    const isTournamentFinal = (currentMode === 'TOURNAMENT' && tournament.currentRoundIndex === 2);
     appState = 'PLAYING';
     isLocalMultiplayerMatch = !!isLocal2p;
     lastActiveIsLocal2p = isLocalMultiplayerMatch;
@@ -442,6 +449,9 @@ window.addEventListener('DOMContentLoaded', () => {
               ? 'GOLDEN GOAL · NEXT SCORES'
               : 'GOLDEN GOAL · NEXT SCORES WINS';
           }
+          audio.setMusicDucked(false);
+          audio.setMusicTrack(null);
+          audio.startCrowdAmbience({ isTournamentFinal });
           crazyGames.gameplayStart();
         },
         onMatchEnd: (results) => {
@@ -453,6 +463,7 @@ window.addEventListener('DOMContentLoaded', () => {
         awayTeam: awayTeamConfig,
         duration: durationSecs,
         isKnockout: (currentMode === 'TOURNAMENT'),
+        isTournamentFinal,
         isLocalMultiplayer: isLocalMultiplayerMatch,
         difficulty: selectedDifficulty,
         audio: audio
@@ -460,12 +471,18 @@ window.addEventListener('DOMContentLoaded', () => {
     );
 
     activeEngine.start();
+    audio.setMusicDucked(false);
+    audio.setMusicTrack(null);
+    audio.startCrowdAmbience({ isTournamentFinal });
     updateTouchControlsVisibility();
     crazyGames.gameplayStart();
   };
 
   // --- Show Pre-Match Broadcast Intro Screen ---
   const showPreMatchIntro = (homeTeamConfig, awayTeamConfig, durationSecs, isLocal2p = false) => {
+    audio.stopCrowdAmbience();
+    audio.setMusicDucked(false);
+    audio.setMusicTrack('menu');
     // Populate Left Card
     const preHomeBadge = document.getElementById('preHomeBadge');
     const preHomeName = document.getElementById('preHomeName');
@@ -537,6 +554,9 @@ window.addEventListener('DOMContentLoaded', () => {
   // --- Match Finished / Results Presentation with Comprehensive Tie Logic ---
   const handleMatchFinished = ({ score, homeTeam, awayTeam, winner, isDraw, isGoldenGoalWin, isPenaltyShootout, penalties, mvp }) => {
     crazyGames.gameplayStop();
+    audio.stopCrowdAmbience();
+    audio.setMusicDucked(false);
+    audio.setMusicTrack('fulltime');
     lastMatchMvp = mvp || null;
 
     // Populate Results Screen
@@ -1058,6 +1078,9 @@ window.addEventListener('DOMContentLoaded', () => {
         if (activeEngine) {
           activeEngine.startSecondHalf();
         }
+        audio.setMusicDucked(false);
+        audio.setMusicTrack(null);
+        audio.startCrowdAmbience({ isTournamentFinal: !!(activeEngine && activeEngine.isTournamentFinal) });
         crazyGames.gameplayStart();
         updateTouchControlsVisibility();
       });
@@ -1104,6 +1127,7 @@ window.addEventListener('DOMContentLoaded', () => {
     ftContinueTournamentBtn.addEventListener('click', () => {
       clickSound();
       runWithMidgameAd(() => {
+        audio.setMusicTrack('menu');
         updateTournamentBadge();
         renderTournamentBracket();
         showScreen(tournamentModal);
@@ -1141,6 +1165,7 @@ window.addEventListener('DOMContentLoaded', () => {
     mvpContinueTournBtn.addEventListener('click', () => {
       clickSound();
       runWithMidgameAd(() => {
+        audio.setMusicTrack('menu');
         updateTournamentBadge();
         renderTournamentBracket();
         showScreen(tournamentModal);
@@ -1472,6 +1497,8 @@ window.addEventListener('DOMContentLoaded', () => {
     if (appState !== 'PLAYING' || !activeEngine || activeEngine.isFullTime || activeEngine.isHalfTime) return;
     settingsReturnState = 'PLAYING';
     activeEngine.setPaused(true);
+    audio.setMusicDucked(true);
+    audio.setCrowdPaused(true);
     crazyGames.gameplayStop();
     if (settingsPausedBadge) settingsPausedBadge.classList.remove('hidden');
     if (pauseMatchActions) pauseMatchActions.classList.remove('hidden');
@@ -1486,12 +1513,16 @@ window.addEventListener('DOMContentLoaded', () => {
     if (doneSettingsBtn) doneSettingsBtn.textContent = 'Done';
     if (settingsReturnState === 'PLAYING' && appState === 'PLAYING') {
       hideAllOverlays();
+      audio.setMusicDucked(false);
+      audio.setCrowdPaused(false);
       if (activeEngine) {
         activeEngine.setPaused(false);
       }
       crazyGames.gameplayStart();
       updateTouchControlsVisibility();
     } else {
+      audio.setMusicDucked(false);
+      audio.setCrowdPaused(false);
       showScreen(mainMenuOverlay);
     }
   };
@@ -1549,34 +1580,75 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, { passive: false });
 
-  // Settings Sliders
+  // Settings Sliders (persisted in localStorage)
+  const AUDIO_PREFS_KEY = 'pocket_football_audio_prefs';
   const masterSlider = document.getElementById('masterVolumeSlider');
   const masterVal = document.getElementById('masterVolumeVal');
+  const musicSlider = document.getElementById('musicVolumeSlider');
+  const musicVal = document.getElementById('musicVolumeVal');
+  const sfxSlider = document.getElementById('sfxVolumeSlider');
+  const sfxVal = document.getElementById('sfxVolumeVal');
+
+  const saveAudioPrefs = () => {
+    try {
+      localStorage.setItem(AUDIO_PREFS_KEY, JSON.stringify({
+        master: Math.round(audio.masterVolume * 100),
+        music: Math.round(audio.musicVolume * 100),
+        sfx: Math.round(audio.sfxVolume * 100),
+      }));
+    } catch (e) {}
+  };
+
+  try {
+    const rawPrefs = localStorage.getItem(AUDIO_PREFS_KEY);
+    if (rawPrefs) {
+      const parsed = JSON.parse(rawPrefs);
+      if (Number.isFinite(parsed.master)) {
+        const m = Math.max(0, Math.min(100, parsed.master));
+        audio.setMasterVolume(m / 100);
+        if (masterSlider) masterSlider.value = String(m);
+        if (masterVal) masterVal.textContent = `${m}%`;
+      }
+      if (Number.isFinite(parsed.music)) {
+        const mu = Math.max(0, Math.min(100, parsed.music));
+        audio.setMusicVolume(mu / 100);
+        if (musicSlider) musicSlider.value = String(mu);
+        if (musicVal) musicVal.textContent = `${mu}%`;
+      }
+      if (Number.isFinite(parsed.sfx)) {
+        const sx = Math.max(0, Math.min(100, parsed.sfx));
+        audio.setSfxVolume(sx / 100);
+        if (sfxSlider) sfxSlider.value = String(sx);
+        if (sfxVal) sfxVal.textContent = `${sx}%`;
+      }
+    }
+  } catch (e) {}
+
   if (masterSlider) {
     masterSlider.addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
       if (masterVal) masterVal.textContent = `${val}%`;
       audio.setMasterVolume(val / 100);
+      saveAudioPrefs();
     });
   }
 
-  const sfxSlider = document.getElementById('sfxVolumeSlider');
-  const sfxVal = document.getElementById('sfxVolumeVal');
+  if (musicSlider) {
+    musicSlider.addEventListener('input', (e) => {
+      audio.init();
+      const val = parseInt(e.target.value, 10);
+      if (musicVal) musicVal.textContent = `${val}%`;
+      audio.setMusicVolume(val / 100);
+      saveAudioPrefs();
+    });
+  }
+
   if (sfxSlider) {
     sfxSlider.addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
       if (sfxVal) sfxVal.textContent = `${val}%`;
       audio.setSfxVolume(val / 100);
-    });
-  }
-
-  const crowdSlider = document.getElementById('crowdVolumeSlider');
-  const crowdVal = document.getElementById('crowdVolumeVal');
-  if (crowdSlider) {
-    crowdSlider.addEventListener('input', (e) => {
-      const val = parseInt(e.target.value, 10);
-      if (crowdVal) crowdVal.textContent = `${val}%`;
-      audio.setCrowdVolume(val / 100);
+      saveAudioPrefs();
     });
   }
 

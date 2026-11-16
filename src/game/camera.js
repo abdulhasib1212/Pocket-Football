@@ -45,9 +45,9 @@ export class Camera {
     const vw = this.viewportWidth;
     const vh = this.viewportHeight;
 
-    // Calculate base fit scales
-    const pitchTotalW = PITCH.WIDTH + PITCH.MARGIN_X * 2;
-    const pitchTotalH = (PITCH.HEIGHT + PITCH.MARGIN_Y * 2) * PHYSICS.TILT_Y;
+    // Calculate base fit scales (OVERVIEW frames the entire stadium bowl)
+    const pitchTotalW = PITCH.WIDTH + 460;
+    const pitchTotalH = (PITCH.HEIGHT + 360) * PHYSICS.TILT_Y;
 
     const fitScaleW = vw / pitchTotalW;
     const fitScaleH = vh / pitchTotalH;
@@ -56,13 +56,16 @@ export class Camera {
     const minOverviewZoom = vh < 520 ? 0.34 : 0.55;
     const minFollowZoom = vh < 520 ? 0.42 : 0.65;
 
+    const stadiumSpanH = (PITCH.HEIGHT + 290) * PHYSICS.TILT_Y;
+    const stadiumFitH = vh / stadiumSpanH;
+
     if (this.mode === 'OVERVIEW') {
-      // OVERVIEW: Centers pitch and frames entire stadium
+      // OVERVIEW: Centers pitch and frames entire 360° stadium
       this.targetX = 0;
-      this.targetY = 0;
+      this.targetY = -24;
       this.targetZoom = Math.max(minOverviewZoom, fullFitScale * 0.98);
     } else if (controlledPlayer && secondPlayer) {
-      // LOCAL 2P FOLLOW MODE: Keep both human players and the ball in view
+      // LOCAL 2P FOLLOW MODE: Keep both human players, ball, and surrounding stands in view
       const bX = ball ? ball.x : (controlledPlayer.x + secondPlayer.x) * 0.5;
       const bY = ball ? ball.y : (controlledPlayer.y + secondPlayer.y) * 0.5;
       const minX = Math.min(controlledPlayer.x, secondPlayer.x, bX);
@@ -73,13 +76,15 @@ export class Camera {
       this.targetX = (minX + maxX) * 0.32 + bX * 0.36;
       this.targetY = (minY + maxY) * 0.32 + bY * 0.36;
 
-      const spanW = Math.max(420, (maxX - minX) + 320);
-      const spanH = Math.max(300, (maxY - minY + 240) * PHYSICS.TILT_Y);
+      const spanW = Math.max(420, (maxX - minX) + 340);
+      const spanH = Math.max(320, (maxY - minY + 280) * PHYSICS.TILT_Y);
       const fit2P = Math.min(vw / spanW, vh / spanH) * this.userZoomMultiplier;
-      const baseWide = Math.min(1.02, Math.max(minFollowZoom, fitScaleH * 1.05)) * this.userZoomMultiplier;
+      const maxFollowZoom = vh < 520 ? 0.62 : 0.92;
+      const followScaleH = vh < 520 ? stadiumFitH * 1.12 : stadiumFitH * 1.01;
+      const baseWide = Math.min(maxFollowZoom, Math.max(minFollowZoom, followScaleH)) * this.userZoomMultiplier;
       this.targetZoom = Math.max(Math.max(minOverviewZoom, fullFitScale * 0.96), Math.min(baseWide, fit2P));
     } else {
-      // FOLLOW MODE: Wide, dynamic arcade camera that always moves with the player
+      // FOLLOW MODE: Dynamic broadcast arcade camera framing pitch, stands, and crowd
       if (controlledPlayer) {
         if (ball) {
           // Primarily follow controlled player (75%) with slight lead toward ball (25%)
@@ -98,36 +103,37 @@ export class Camera {
         this.targetY = ball.y;
       }
 
-      // Calculate wide, readable arcade zoom:
-      // Wide enough so you can see plenty of pitch, teammates, and opponents without feeling claustrophobic
-      const wideZoom = Math.min(1.05, Math.max(minFollowZoom, fitScaleH * 1.08)) * this.userZoomMultiplier;
+      // Close enough for dynamic arcade tracking while framing North & South stadium stands
+      const maxFollowZoom = vh < 520 ? 0.62 : 0.92;
+      const followScaleH = vh < 520 ? stadiumFitH * 1.12 : stadiumFitH * 1.01;
+      const wideZoom = Math.min(maxFollowZoom, Math.max(minFollowZoom, followScaleH)) * this.userZoomMultiplier;
       this.targetZoom = wideZoom;
     }
 
     if (this.mode !== 'OVERVIEW') {
-
       // Smart dynamic camera boundary clamping:
-      // Prevents showing infinite void outside stadium while guaranteeing the player is never cut off
+      // Allows panning smoothly up to North Grandstand tiers, West/East Goal Stands, and South Stand
       const visibleHalfW = (vw * 0.5) / this.targetZoom;
       const visibleHalfH = (vh * 0.5) / (this.targetZoom * PHYSICS.TILT_Y);
 
-      const maxAllowedX = (PITCH.WIDTH * 0.5) + PITCH.MARGIN_X * 0.6;
-      const maxAllowedY = (PITCH.HEIGHT * 0.5) + PITCH.MARGIN_Y * 0.5;
+      const maxAllowedX = (PITCH.WIDTH * 0.5) + 245;
+      const minAllowedY = -(PITCH.HEIGHT * 0.5 + 310);
+      const maxAllowedY = (PITCH.HEIGHT * 0.5) + 170;
 
       if (maxAllowedX > visibleHalfW) {
         const clampX = maxAllowedX - visibleHalfW;
         this.targetX = Math.max(-clampX, Math.min(clampX, this.targetX));
       } else {
-        // Entire pitch fits horizontally
         this.targetX = 0;
       }
 
-      if (maxAllowedY > visibleHalfH) {
-        const clampY = maxAllowedY - visibleHalfH;
-        this.targetY = Math.max(-clampY, Math.min(clampY, this.targetY));
+      const spanHalfY = (maxAllowedY - minAllowedY) * 0.5;
+      if (spanHalfY > visibleHalfH) {
+        const minCamY = minAllowedY + visibleHalfH;
+        const maxCamY = maxAllowedY - visibleHalfH;
+        this.targetY = Math.max(minCamY, Math.min(maxCamY, this.targetY));
       } else {
-        // Entire pitch fits vertically
-        this.targetY = 0;
+        this.targetY = (minAllowedY + maxAllowedY) * 0.5;
       }
     }
 

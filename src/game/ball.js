@@ -208,12 +208,13 @@ export class Ball {
           this.x < -halfW - this.radius * 1.25 ||
           (this.x < -halfW - this.radius && ballSpeed < 30)
         ) {
+          const wasMissedShot = !!(this.shotAtGoalTeam || ballSpeed > 420);
           this.vx *= 0.5;
           this.vy *= 0.5;
           this.pendingPassFrom = null;
           this.lastPassInfo = null;
           this.shotAtGoalTeam = null;
-          if (onGoalKick) onGoalKick('blue'); // Blue gets goal kick
+          if (onGoalKick) onGoalKick('blue', wasMissedShot); // Blue gets goal kick
         }
         // Keep within reasonable stadium boundary
         if (this.x < -halfW - 80) {
@@ -247,12 +248,13 @@ export class Ball {
           this.x > halfW + this.radius * 1.25 ||
           (this.x > halfW + this.radius && ballSpeed < 30)
         ) {
+          const wasMissedShot = !!(this.shotAtGoalTeam || ballSpeed > 420);
           this.vx *= 0.5;
           this.vy *= 0.5;
           this.pendingPassFrom = null;
           this.lastPassInfo = null;
           this.shotAtGoalTeam = null;
-          if (onGoalKick) onGoalKick('red'); // Red gets goal kick
+          if (onGoalKick) onGoalKick('red', wasMissedShot); // Red gets goal kick
         }
         if (this.x > halfW + 80) {
           this.x = halfW + 80;
@@ -278,7 +280,10 @@ export class Ball {
         this.x = goalLineX + dirX * minDist;
         this.vx = dirX * Math.abs(this.vx) * 0.7 + dirX * 60;
         this.vz = -Math.abs(this.vz) * 0.65;
-        if (audio) audio.playPostClank();
+        if (audio) {
+          audio.playPostClank();
+          if (audio.playCrowdMiss) audio.playCrowdMiss();
+        }
       }
     }
   }
@@ -301,7 +306,10 @@ export class Ball {
       if (dot < 0) {
         this.vx = (this.vx - 2 * dot * nx) * PHYSICS.BALL_RESTITUTION_POST;
         this.vy = (this.vy - 2 * dot * ny) * PHYSICS.BALL_RESTITUTION_POST;
-        if (audio) audio.playPostClank();
+        if (audio) {
+          audio.playPostClank();
+          if (audio.playCrowdMiss) audio.playCrowdMiss();
+        }
       }
     }
   }

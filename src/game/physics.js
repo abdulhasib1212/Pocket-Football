@@ -102,7 +102,10 @@ export class PhysicsSystem {
             player.stats.tackles = (player.stats.tackles || 0) + 1;
           }
 
-          if (audio) audio.playTackle();
+          if (audio) {
+            audio.playTackle();
+            if (audio.playCrowdCheer) audio.playCrowdCheer(0.45);
+          }
         }
       }
       return;
@@ -132,10 +135,16 @@ export class PhysicsSystem {
       } else if (ball.lastPassInfo && ball.lastPassInfo.team !== player.team) {
         ball.lastPassInfo = null;
       }
+      const wasShotSave = player.role === 'GK' && !!ball.shotAtGoalTeam;
       ball.shotAtGoalTeam = null;
       ball.carrier = player;
       ball.lastKickedBy = player;
-      if (audio) audio.playTap();
+      if (audio) {
+        audio.playTap();
+        if (wasShotSave && audio.playCrowdCheer) {
+          audio.playCrowdCheer(0.8);
+        }
+      }
     }
   }
 

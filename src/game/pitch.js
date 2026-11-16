@@ -3,22 +3,29 @@
  * Renders the 2.5D football pitch, markings, realistic 3D goals, perimeter boards, and stadium stands.
  */
 import { PITCH } from './constants.js';
+import { StadiumRenderer } from './stadium.js';
 
 export class Pitch {
   constructor() {
     this.stripeColors = ['#2f8f48', '#287d3e'];
     this.flagSwing = 0;
+    this.stadium = new StadiumRenderer();
   }
 
-  update(dt) {
+  setTeamColors(homeTeam, awayTeam) {
+    this.stadium.setTeamColors(homeTeam, awayTeam);
+  }
+
+  update(dt, stadiumState) {
     this.flagSwing += dt * 3.5;
+    this.stadium.update(dt, stadiumState);
   }
 
   render(ctx, camera) {
     const halfW = PITCH.WIDTH / 2;
     const halfH = PITCH.HEIGHT / 2;
 
-    // 1. Stadium Grandstands & Miniature Surrounds
+    // 1. Stadium Grandstands & Miniature Surrounds (North, West, East, Corners, Tunnels, Dugouts)
     this.renderStadium(ctx, camera, halfW, halfH);
 
     // 2. Outer grass apron / runoff
@@ -40,67 +47,19 @@ export class Pitch {
     this.renderGoals(ctx, camera, halfW, halfH);
   }
 
+  renderForeground(ctx, camera) {
+    const halfW = PITCH.WIDTH / 2;
+    const halfH = PITCH.HEIGHT / 2;
+    this.stadium.renderForeground(ctx, camera, halfW, halfH);
+  }
+
   renderStadium(ctx, camera, halfW, halfH) {
-    const marginX = PITCH.MARGIN_X + 180;
-    const marginY = PITCH.MARGIN_Y + 140;
-
-    const topLeft = camera.worldToScreen(-halfW - marginX, -halfH - marginY, 0);
-    const topRight = camera.worldToScreen(halfW + marginX, -halfH - marginY, 0);
-    const botRight = camera.worldToScreen(halfW + marginX, halfH + marginY, 0);
-    const botLeft = camera.worldToScreen(-halfW - marginX, halfH + marginY, 0);
-
-    // Deep stadium floor
-    ctx.beginPath();
-    ctx.moveTo(topLeft.x, topLeft.y);
-    ctx.lineTo(topRight.x, topRight.y);
-    ctx.lineTo(botRight.x, botRight.y);
-    ctx.lineTo(botLeft.x, botLeft.y);
-    ctx.closePath();
-    ctx.fillStyle = '#111827'; // Dark stadium concrete
-    ctx.fill();
-
-    // Stadium stand tiers (top & bottom)
-    const standColors = ['#1e293b', '#334155', '#475569'];
-    const crowdPalette = ['#e63946', '#1d3557', '#f1faee', '#a8dadc', '#457b9d', '#e9c46a'];
-
-    // Top Grandstand
-    for (let tier = 0; tier < 3; tier++) {
-      const yOffset = -halfH - PITCH.MARGIN_Y - (tier * 35) - 10;
-      const tZ = tier * 18;
-      const p1 = camera.worldToScreen(-halfW - 120, yOffset, tZ);
-      const p2 = camera.worldToScreen(halfW + 120, yOffset, tZ);
-      const p3 = camera.worldToScreen(halfW + 120, yOffset - 32, tZ + 12);
-      const p4 = camera.worldToScreen(-halfW - 120, yOffset - 32, tZ + 12);
-
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.lineTo(p4.x, p4.y);
-      ctx.closePath();
-      ctx.fillStyle = standColors[tier];
-      ctx.fill();
-
-      // Stylized miniature crowd spectators
-      const step = 28 * camera.zoom;
-      if (step > 6) {
-        ctx.save();
-        for (let x = p1.x + 10; x < p2.x - 10; x += step) {
-          const colorIdx = Math.floor((Math.sin(x * 123.45) * 0.5 + 0.5) * crowdPalette.length);
-          ctx.fillStyle = crowdPalette[colorIdx];
-          const headY = (p1.y + p3.y) / 2;
-          ctx.beginPath();
-          ctx.arc(x, headY, 2.5 * camera.zoom, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.restore();
-      }
-    }
+    this.stadium.renderBackground(ctx, camera, halfW, halfH);
   }
 
   renderRunoff(ctx, camera, halfW, halfH) {
-    const mx = PITCH.MARGIN_X;
-    const my = PITCH.MARGIN_Y;
+    const mx = 88;
+    const my = 46;
 
     const p1 = camera.worldToScreen(-halfW - mx, -halfH - my, 0);
     const p2 = camera.worldToScreen(halfW + mx, -halfH - my, 0);
@@ -256,50 +215,7 @@ export class Pitch {
   }
 
   renderAdBoards(ctx, camera, halfW, halfH) {
-    const boardH = 26; // Height off ground
-    const yMargin = PITCH.MARGIN_Y - 25;
-    const xMargin = PITCH.MARGIN_X - 25;
-
-    // Top ad board ribbon
-    const pTopL_ground = camera.worldToScreen(-halfW - 40, -halfH - yMargin, 0);
-    const pTopR_ground = camera.worldToScreen(halfW + 40, -halfH - yMargin, 0);
-    const pTopL_top = camera.worldToScreen(-halfW - 40, -halfH - yMargin, boardH);
-    const pTopR_top = camera.worldToScreen(halfW + 40, -halfH - yMargin, boardH);
-
-    ctx.save();
-    // Front face
-    ctx.beginPath();
-    ctx.moveTo(pTopL_ground.x, pTopL_ground.y);
-    ctx.lineTo(pTopR_ground.x, pTopR_ground.y);
-    ctx.lineTo(pTopR_top.x, pTopR_top.y);
-    ctx.lineTo(pTopL_top.x, pTopL_top.y);
-    ctx.closePath();
-
-    const adGradient = ctx.createLinearGradient(pTopL_top.x, pTopL_top.y, pTopR_top.x, pTopR_top.y);
-    adGradient.addColorStop(0, '#1E3A8A');
-    adGradient.addColorStop(0.35, '#2563EB');
-    adGradient.addColorStop(0.7, '#DC2626');
-    adGradient.addColorStop(1, '#991B1B');
-    ctx.fillStyle = adGradient;
-    ctx.fill();
-
-    // Border bevel
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 1.2 * camera.zoom;
-    ctx.stroke();
-
-    // LED text
-    if (camera.zoom > 0.65) {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = `bold ${Math.round(11 * camera.zoom)}px 'Trebuchet MS', sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      const textX = (pTopL_top.x + pTopR_top.x) / 2;
-      const textY = (pTopL_top.y + pTopL_ground.y) / 2;
-      ctx.fillText('★ POCKET FOOTBALL LEAGUE ★ ARCADE CHAMPIONSHIP 2026 ★', textX, textY);
-    }
-
-    ctx.restore();
+    this.stadium.renderAdBoards(ctx, camera, halfW, halfH);
   }
 
   renderCornerFlags(ctx, camera, halfW, halfH) {
