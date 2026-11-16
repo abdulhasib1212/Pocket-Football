@@ -272,13 +272,15 @@ export class StadiumRenderer {
       return 6 + Math.floor(seededNoise(idx, 61) * 8);
     };
 
-    const addSpectator = (list, wx, wy, wz, stand, section, row) => {
+    const addSpectator = (list, wx, wy, wz, stand, section, row, customScale = null) => {
       const idx = seedCounter++;
-      // ~89% occupancy so individual empty molded seats remain visible in rows
-      if (seededNoise(idx, 3) > 0.89) return;
+      // ~88% occupancy so individual empty molded seats remain visible in rows
+      if (seededNoise(idx, 3) > 0.88) return;
       const bias = pickTeamBias(wx, wy);
       const variant = pickVariant(bias, idx);
-      const scale = 0.90 + seededNoise(idx, 7) * 0.20;
+      const scale = customScale !== null
+        ? customScale + (seededNoise(idx, 7) - 0.5) * 0.12
+        : 0.88 + seededNoise(idx, 7) * 0.18;
       const phase = seededNoise(idx, 11) * Math.PI * 2;
       const waver = seededNoise(idx, 13) > 0.64; // 36% avid fans wave often
       const fanTeam = variant < 3 ? 'blue' : variant < 6 ? 'red' : 'neutral';
@@ -309,74 +311,76 @@ export class StadiumRenderer {
       row <= 1 && (Math.abs(x) < 34 || Math.abs(x + 390) < 26 || Math.abs(x - 390) < 26);
 
     for (let r = 0; r < northLowerRows; r++) {
-      const wy = -runoffH - 18 - r * 26;
-      const wz = 14 + r * 14;
-      for (let x = northStartX + 18; x <= northEndX - 18; x += 22) {
+      const wy = -runoffH - 18 - r * 24;
+      const wz = 12 + r * 12;
+      for (let x = northStartX + 18; x <= northEndX - 18; x += 23) {
         if (isNearNorthAisle(x) || isInNorthTunnel(x, r)) continue;
         const jx = x + (seededNoise(seedCounter, 2) - 0.5) * 4;
         addSpectator(this.spectatorsBack, jx, wy - 4, wz, 'north', 0, r);
       }
     }
-    // Upper Tier (separated by concourse walkway at wy = -runoffH - 134)
+    // Upper Tier (separated by concourse walkway at wy = -runoffH - 122)
     for (let r = 0; r < northUpperRows; r++) {
-      const wy = -runoffH - 150 - r * 26;
-      const wz = 76 + r * 15;
-      for (let x = northStartX + 18; x <= northEndX - 18; x += 22) {
+      const wy = -runoffH - 138 - r * 22;
+      const wz = 66 + r * 13;
+      for (let x = northStartX + 18; x <= northEndX - 18; x += 23) {
         if (isNearNorthAisle(x)) continue;
         const jx = x + (seededNoise(seedCounter, 5) - 0.5) * 4;
         addSpectator(this.spectatorsBack, jx, wy - 4, wz, 'north', 1, r);
       }
     }
 
-    // --- 2. WEST & EAST GOAL-END STANDS (Behind Goals, 5 rows each, 3 sections, 2 aisles + tunnel) ---
+    // --- 2. WEST & EAST GOAL-END STANDS (Behind Goals, 4 well-spaced rows each) ---
     const sideAisleYs = [-170, 170];
-    const isNearSideAisle = (y) => sideAisleYs.some((ay) => Math.abs(y - ay) < 18);
-    const isInSideTunnel = (y, row) => row <= 1 && Math.abs(y) < 30;
+    const isNearSideAisle = (y) => sideAisleYs.some((ay) => Math.abs(y - ay) < 20);
+    const isInSideTunnel = (y, row) => row <= 1 && Math.abs(y) < 32;
 
     for (const side of ['west', 'east']) {
       const sign = side === 'west' ? -1 : 1;
-      for (let r = 0; r < 5; r++) {
-        const wx = sign * (runoffW + 24 + r * 28);
-        const wz = 12 + r * 14;
-        for (let y = -halfH - 25; y <= halfH + 25; y += 22) {
+      for (let r = 0; r < 4; r++) {
+        const wx = sign * (runoffW + 28 + r * 33);
+        const wz = 10 + r * 14;
+        for (let y = -halfH - 28; y <= halfH + 28; y += 30) {
           if (isNearSideAisle(y) || isInSideTunnel(y, r)) continue;
           const jy = y + (seededNoise(seedCounter, 19) - 0.5) * 4;
-          addSpectator(this.spectatorsBack, wx, jy, wz, side, 0, r);
+          addSpectator(this.spectatorsBack, wx, jy, wz, side, 0, r, 0.84);
         }
       }
     }
 
-    // --- 3. CORNER BOWL QUADRANTS (Connecting North/South to West/East) ---
+    // --- 3. CORNER BOWL QUADRANTS (Flush elliptical connectors between straight stands) ---
     const cornerSpecs = [
-      { cx: -runoffW - 18, cy: -runoffH - 16, sx: -1, sy: -1, list: 'back' },
-      { cx: runoffW + 18, cy: -runoffH - 16, sx: 1, sy: -1, list: 'back' },
-      { cx: -runoffW - 18, cy: runoffH + 16, sx: -1, sy: 1, list: 'front' },
-      { cx: runoffW + 18, cy: runoffH + 16, sx: 1, sy: 1, list: 'front' },
+      { cx: -runoffW - 14, cy: -runoffH - 8, sx: -1, sy: -1, radYMax: 104, list: 'back' },
+      { cx: runoffW + 14, cy: -runoffH - 8, sx: 1, sy: -1, radYMax: 104, list: 'back' },
+      { cx: -runoffW - 14, cy: runoffH + 8, sx: -1, sy: 1, radYMax: 86, list: 'front' },
+      { cx: runoffW + 14, cy: runoffH + 8, sx: 1, sy: 1, radYMax: 86, list: 'front' },
     ];
     cornerSpecs.forEach((c) => {
       const targetList = c.list === 'back' ? this.spectatorsBack : this.spectatorsFront;
-      for (let r = 0; r < 4; r++) {
-        const rad = 28 + r * 26;
-        const wz = 14 + r * 13;
-        for (let step = 0; step <= 4; step++) {
-          const ang = 0.22 + (step / 4) * (Math.PI * 0.5 - 0.44);
-          const wx = c.cx + c.sx * Math.cos(ang) * rad;
-          const wy = c.cy + c.sy * Math.sin(ang) * rad;
-          addSpectator(targetList, wx, wy, wz, 'corner', 0, r);
+      for (let r = 0; r < 3; r++) {
+        const frac = (r + 0.6) / 3.2;
+        const radX = 136 * frac;
+        const radY = c.radYMax * frac;
+        const wz = c.sy < 0 ? 12 + r * 14 : 7 + r * 4;
+        for (let step = 0; step <= 3; step++) {
+          const ang = 0.25 + (step / 3) * (Math.PI * 0.5 - 0.5);
+          const wx = c.cx + c.sx * Math.cos(ang) * radX;
+          const wy = c.cy + c.sy * Math.sin(ang) * radY;
+          addSpectator(targetList, wx, wy, wz, 'corner', 0, r, 0.84);
         }
       }
     });
 
-    // --- 4. SOUTH FOREGROUND STAND (Bottom Touchline, 4 low-profile stepped rows) ---
+    // --- 4. SOUTH FOREGROUND STAND (Bottom Touchline, 3 cleanly separated stepped rows) ---
     const southAisleXs = [-520, -260, 0, 260, 520];
     const isNearSouthAisle = (x) => southAisleXs.some((ax) => Math.abs(x - ax) < 18);
-    for (let r = 0; r < 4; r++) {
-      const wy = runoffH + 22 + r * 26;
-      const wz = 10 + r * 11;
-      for (let x = northStartX + 18; x <= northEndX - 18; x += 23) {
+    for (let r = 0; r < 3; r++) {
+      const wy = runoffH + 26 + r * 26;
+      const wz = 8 + r * 4;
+      for (let x = northStartX + 18; x <= northEndX - 18; x += 24) {
         if (isNearSouthAisle(x)) continue;
         const jx = x + (seededNoise(seedCounter, 23) - 0.5) * 4;
-        addSpectator(this.spectatorsFront, jx, wy, wz, 'south', 0, r);
+        addSpectator(this.spectatorsFront, jx, wy, wz, 'south', 0, r, 0.88);
       }
     }
 
@@ -385,12 +389,12 @@ export class StadiumRenderer {
     this.spectatorsBack.sort((a, b) => depthKey(a) - depthKey(b));
     this.spectatorsFront.sort((a, b) => depthKey(a) - depthKey(b));
 
-    // --- 5. CORNER FLOODLIGHT TOWERS ---
+    // --- 5. CORNER FLOODLIGHT TOWERS (Placed cleanly outside outer stadium bowl corners) ---
     this.floodlights = [
-      { x: -runoffW - 45, y: -runoffH - 25, h: 108, dirX: 1, dirY: 1 },
-      { x: runoffW + 45, y: -runoffH - 25, h: 108, dirX: -1, dirY: 1 },
-      { x: -runoffW - 45, y: runoffH + 49, h: 115, dirX: 1, dirY: -1 },
-      { x: runoffW + 45, y: runoffH + 49, h: 115, dirX: -1, dirY: -1 },
+      { x: -runoffW - 170, y: -runoffH - 135, h: 135, dirX: 1, dirY: 1 },
+      { x: runoffW + 170, y: -runoffH - 135, h: 135, dirX: -1, dirY: 1 },
+      { x: -runoffW - 170, y: runoffH + 108, h: 118, dirX: 1, dirY: -1 },
+      { x: runoffW + 170, y: runoffH + 108, h: 118, dirX: -1, dirY: -1 },
     ];
   }
 
@@ -459,16 +463,16 @@ export class StadiumRenderer {
       Math.max(1, 1.5 * camera.zoom)
     );
 
-    // 2. Corner Stadium Bowls (back two corners first)
-    this.renderCornerStand(ctx, camera, -runoffW - 14, -runoffH - 12, -1, -1);
-    this.renderCornerStand(ctx, camera, runoffW + 14, -runoffH - 12, 1, -1);
+    // 2. Corner Stadium Bowls (back two corners flush with North & West/East walls)
+    this.renderCornerStand(ctx, camera, -runoffW - 14, -runoffH - 8, -1, -1, 104, 56);
+    this.renderCornerStand(ctx, camera, runoffW + 14, -runoffH - 8, 1, -1, 104, 56);
 
     // 3. North Grandstand (Upper Tier -> Concourse Walkway -> Lower Tier -> Front Wall)
     this.renderNorthGrandstand(ctx, camera, runoffW, runoffH);
 
     // 4. West & East Goal-End Stands
-    this.renderGoalEndStand(ctx, camera, -runoffW, -1, halfH);
-    this.renderGoalEndStand(ctx, camera, runoffW, 1, halfH);
+    this.renderGoalEndStand(ctx, camera, -runoffW, -1, runoffH);
+    this.renderGoalEndStand(ctx, camera, runoffW, 1, runoffH);
 
     // 5. Spectators in North, West, East, and back Corners (culled & atlas-batched)
     this.renderSpectatorBatch(ctx, camera, this.spectatorsBack);
@@ -482,22 +486,22 @@ export class StadiumRenderer {
   }
 
   renderNorthGrandstand(ctx, camera, runoffW, runoffH) {
-    const xL = -runoffW + 4;
-    const xR = runoffW - 4;
+    const xL = -runoffW - 14;
+    const xR = runoffW + 14;
     const aisleXs = [-520, -260, 0, 260, 520];
     const zoom = camera.zoom;
 
     // Upper Tier Structure (3 stepped rows)
-    const upperFrontY = -runoffH - 134;
-    const upperBackY = -runoffH - 222;
+    const upperFrontY = -runoffH - 122;
+    const upperBackY = -runoffH - 196;
     this.drawQuad(
       ctx,
       camera,
       [
-        [xL, upperBackY, 122],
-        [xR, upperBackY, 122],
-        [xR, upperFrontY, 72],
-        [xL, upperFrontY, 72],
+        [xL, upperBackY, 104],
+        [xR, upperBackY, 104],
+        [xR, upperFrontY, 64],
+        [xL, upperFrontY, 64],
       ],
       '#1E293B',
       '#334155',
@@ -509,10 +513,10 @@ export class StadiumRenderer {
       ctx,
       camera,
       [
-        [xL - 8, upperBackY - 26, 140],
-        [xR + 8, upperBackY - 26, 140],
-        [xR + 8, upperBackY, 122],
-        [xL - 8, upperBackY, 122],
+        [xL - 8, upperBackY - 24, 120],
+        [xR + 8, upperBackY - 24, 120],
+        [xR + 8, upperBackY, 104],
+        [xL - 8, upperBackY, 104],
       ],
       '#0F172A',
       '#475569',
@@ -521,22 +525,22 @@ export class StadiumRenderer {
 
     // Upper Tier Individual Seat Rows
     for (let r = 2; r >= 0; r--) {
-      const ry1 = -runoffH - 144 - r * 26;
-      const ry2 = ry1 - 16;
-      const rz1 = 74 + r * 15;
-      const rz2 = rz1 + 10;
+      const ry1 = -runoffH - 132 - r * 22;
+      const ry2 = ry1 - 15;
+      const rz1 = 66 + r * 13;
+      const rz2 = rz1 + 9;
       this.drawQuad(
         ctx,
         camera,
         [
-          [xL + 8, ry2, rz2],
-          [xR - 8, ry2, rz2],
-          [xR - 8, ry1, rz1],
-          [xL + 8, ry1, rz1],
+          [xL + 14, ry2, rz2],
+          [xR - 14, ry2, rz2],
+          [xR - 14, ry1, rz1],
+          [xL + 14, ry1, rz1],
         ],
         r % 2 === 0 ? '#273549' : '#314158'
       );
-      this.renderSeatBlocks(ctx, camera, xL + 16, xR - 16, ry1 - 3, rz1 + 2, aisleXs, zoom);
+      this.renderSeatBlocks(ctx, camera, xL + 22, xR - 22, ry1 - 3, rz1 + 2, aisleXs, zoom);
     }
 
     // Mid-Tier Concourse Walkway + Safety Rail
@@ -544,24 +548,24 @@ export class StadiumRenderer {
       ctx,
       camera,
       [
-        [xL, upperFrontY, 72],
-        [xR, upperFrontY, 72],
-        [xR, -runoffH - 114, 62],
-        [xL, -runoffH - 114, 62],
+        [xL, upperFrontY, 64],
+        [xR, upperFrontY, 64],
+        [xR, -runoffH - 104, 56],
+        [xL, -runoffH - 104, 56],
       ],
       '#334155'
     );
-    this.renderHorizontalRailing(ctx, camera, xL, xR, -runoffH - 114, 62, 8, zoom);
+    this.renderHorizontalRailing(ctx, camera, xL, xR, -runoffH - 104, 56, 7, zoom);
 
     // Lower Tier Structure (4 stepped rows)
     const lowerFrontY = -runoffH - 8;
-    const lowerBackY = -runoffH - 114;
+    const lowerBackY = -runoffH - 104;
     this.drawQuad(
       ctx,
       camera,
       [
-        [xL, lowerBackY, 62],
-        [xR, lowerBackY, 62],
+        [xL, lowerBackY, 56],
+        [xR, lowerBackY, 56],
         [xR, lowerFrontY, 10],
         [xL, lowerFrontY, 10],
       ],
@@ -572,22 +576,22 @@ export class StadiumRenderer {
 
     // Lower Tier Individual Seat Rows
     for (let r = 3; r >= 0; r--) {
-      const ry1 = -runoffH - 16 - r * 26;
-      const ry2 = ry1 - 16;
-      const rz1 = 12 + r * 14;
-      const rz2 = rz1 + 9;
+      const ry1 = -runoffH - 16 - r * 24;
+      const ry2 = ry1 - 15;
+      const rz1 = 12 + r * 12;
+      const rz2 = rz1 + 8;
       this.drawQuad(
         ctx,
         camera,
         [
-          [xL + 8, ry2, rz2],
-          [xR - 8, ry2, rz2],
-          [xR - 8, ry1, rz1],
-          [xL + 8, ry1, rz1],
+          [xL + 14, ry2, rz2],
+          [xR - 14, ry2, rz2],
+          [xR - 14, ry1, rz1],
+          [xL + 14, ry1, rz1],
         ],
         r % 2 === 0 ? '#253347' : '#2E3D54'
       );
-      this.renderSeatBlocks(ctx, camera, xL + 16, xR - 16, ry1 - 3, rz1 + 2, aisleXs, zoom);
+      this.renderSeatBlocks(ctx, camera, xL + 22, xR - 22, ry1 - 3, rz1 + 2, aisleXs, zoom);
     }
 
     // Concrete Stair Aisles (upper & lower)
@@ -596,10 +600,10 @@ export class StadiumRenderer {
         ctx,
         camera,
         [
-          [ax - 12, upperBackY, 122],
-          [ax + 12, upperBackY, 122],
-          [ax + 12, upperFrontY, 72],
-          [ax - 12, upperFrontY, 72],
+          [ax - 12, upperBackY, 104],
+          [ax + 12, upperBackY, 104],
+          [ax + 12, upperFrontY, 64],
+          [ax - 12, upperFrontY, 64],
         ],
         '#475569'
       );
@@ -607,8 +611,8 @@ export class StadiumRenderer {
         ctx,
         camera,
         [
-          [ax - 12, lowerBackY, 62],
-          [ax + 12, lowerBackY, 62],
+          [ax - 12, lowerBackY, 56],
+          [ax + 12, lowerBackY, 56],
           [ax + 12, lowerFrontY, 10],
           [ax - 12, lowerFrontY, 10],
         ],
@@ -616,7 +620,7 @@ export class StadiumRenderer {
       );
       // Yellow step trim lines
       if (zoom > 0.55) {
-        const sTop = camera.worldToScreen(ax, lowerBackY, 62);
+        const sTop = camera.worldToScreen(ax, lowerBackY, 56);
         const sBot = camera.worldToScreen(ax, lowerFrontY, 10);
         ctx.strokeStyle = 'rgba(250, 204, 21, 0.35)';
         ctx.lineWidth = Math.max(1, 2 * zoom);
@@ -630,9 +634,9 @@ export class StadiumRenderer {
     });
 
     // Recessed Vomitory Entrance Tunnels (Center player tunnel + Left/Right fan tunnels)
-    this.renderNorthTunnel(ctx, camera, 0, lowerFrontY, 30, 32, zoom, true);
-    this.renderNorthTunnel(ctx, camera, -390, lowerFrontY, 22, 26, zoom, false);
-    this.renderNorthTunnel(ctx, camera, 390, lowerFrontY, 22, 26, zoom, false);
+    this.renderNorthTunnel(ctx, camera, 0, lowerFrontY, 30, 30, zoom, true);
+    this.renderNorthTunnel(ctx, camera, -390, lowerFrontY, 22, 24, zoom, false);
+    this.renderNorthTunnel(ctx, camera, 390, lowerFrontY, 22, 24, zoom, false);
 
     // Front Pitchside Retaining Wall + Safety Railing
     this.drawQuad(
@@ -705,11 +709,11 @@ export class StadiumRenderer {
     );
   }
 
-  renderGoalEndStand(ctx, camera, baseEdgeX, dirX, halfH) {
-    const yT = -halfH - 42;
-    const yB = halfH + 42;
+  renderGoalEndStand(ctx, camera, baseEdgeX, dirX, runoffH) {
+    const yT = -runoffH - 8;
+    const yB = runoffH + 8;
     const innerX = baseEdgeX + dirX * 14;
-    const outerX = baseEdgeX + dirX * 158;
+    const outerX = baseEdgeX + dirX * 150;
     const zoom = camera.zoom;
 
     // Concrete sloped tier shell
@@ -717,8 +721,8 @@ export class StadiumRenderer {
       ctx,
       camera,
       [
-        [outerX, yT, 76],
-        [outerX, yB, 76],
+        [outerX, yT, 64],
+        [outerX, yB, 64],
         [innerX, yB, 8],
         [innerX, yT, 8],
       ],
@@ -727,10 +731,10 @@ export class StadiumRenderer {
       Math.max(1, 1.2 * zoom)
     );
 
-    // Individual seating rows along East/West
-    for (let r = 4; r >= 0; r--) {
-      const rx1 = baseEdgeX + dirX * (16 + r * 28);
-      const rx2 = baseEdgeX + dirX * (16 + r * 28 + 18);
+    // Individual seating rows along East/West (4 crisp rows)
+    for (let r = 3; r >= 0; r--) {
+      const rx1 = baseEdgeX + dirX * (16 + r * 33);
+      const rx2 = baseEdgeX + dirX * (16 + r * 33 + 22);
       const rz1 = 10 + r * 14;
       const rz2 = rz1 + 8;
 
@@ -738,23 +742,23 @@ export class StadiumRenderer {
         ctx,
         camera,
         [
-          [rx2, yT + 8, rz2],
-          [rx2, yB - 8, rz2],
-          [rx1, yB - 8, rz1],
-          [rx1, yT + 8, rz1],
+          [rx2, yT + 14, rz2],
+          [rx2, yB - 14, rz2],
+          [rx1, yB - 14, rz1],
+          [rx1, yT + 14, rz1],
         ],
         r % 2 === 0 ? '#273549' : '#314158'
       );
 
-      // Molded individual seats along Y (vertical row)
-      if (zoom > 0.52) {
-        const seatColor = dirX < 0 ? 'rgba(56, 189, 248, 0.35)' : 'rgba(248, 113, 113, 0.35)';
+      // Molded individual seats along Y (well-spaced to match spectators)
+      if (zoom > 0.50) {
+        const seatColor = dirX < 0 ? 'rgba(56, 189, 248, 0.36)' : 'rgba(248, 113, 113, 0.36)';
         ctx.fillStyle = seatColor;
         const w = Math.max(3, 8 * zoom);
-        const h = Math.max(2, 5 * zoom);
-        for (let y = yT + 18; y <= yB - 18; y += 22) {
-          if (Math.abs(y + 170) < 18 || Math.abs(y - 170) < 18) continue;
-          if (r <= 1 && Math.abs(y) < 30) continue;
+        const h = Math.max(2, 5.5 * zoom);
+        for (let y = yT + 26; y <= yB - 26; y += 30) {
+          if (Math.abs(y + 170) < 20 || Math.abs(y - 170) < 20) continue;
+          if (r <= 1 && Math.abs(y) < 32) continue;
           const pt = camera.worldToScreen((rx1 + rx2) * 0.5, y, rz1 + 2);
           ctx.fillRect(pt.x - w * 0.5, pt.y - h * 0.5, w, h);
         }
@@ -767,10 +771,10 @@ export class StadiumRenderer {
         ctx,
         camera,
         [
-          [outerX, ay - 11, 76],
-          [outerX, ay + 11, 76],
-          [innerX, ay + 11, 8],
-          [innerX, ay - 11, 8],
+          [outerX, ay - 12, 64],
+          [outerX, ay + 12, 64],
+          [innerX, ay + 12, 8],
+          [innerX, ay - 12, 8],
         ],
         '#475569'
       );
@@ -781,10 +785,10 @@ export class StadiumRenderer {
       ctx,
       camera,
       [
-        [innerX + dirX * 42, -22, 32],
-        [innerX + dirX * 42, 22, 32],
-        [innerX, 22, 0],
-        [innerX, -22, 0],
+        [innerX + dirX * 42, -24, 30],
+        [innerX + dirX * 42, 24, 30],
+        [innerX, 24, 0],
+        [innerX, -24, 0],
       ],
       '#050811',
       '#64748B',
@@ -813,19 +817,14 @@ export class StadiumRenderer {
     ctx.stroke();
   }
 
-  renderCornerStand(ctx, camera, cx, cy, sx, sy) {
-    // Stepped octagonal corner infill tying North/South and West/East tiers together
-    const innerR = 14;
-    const outerR = 148;
-    const steps = 4;
-    const pts = [];
+  renderCornerStand(ctx, camera, cx, cy, sx, sy, outerRY = 104, outerZ = 56) {
+    // Seamless elliptical corner bowl flush with straight North/South & West/East tiers
+    const outerRX = 136;
+    const steps = 6;
+    const pts = [[cx, cy, 8]];
     for (let i = 0; i <= steps; i++) {
       const a = (i / steps) * Math.PI * 0.5;
-      pts.push([cx + sx * Math.cos(a) * outerR, cy + sy * Math.sin(a) * outerR, 72]);
-    }
-    for (let i = steps; i >= 0; i--) {
-      const a = (i / steps) * Math.PI * 0.5;
-      pts.push([cx + sx * Math.cos(a) * innerR, cy + sy * Math.sin(a) * innerR, 10]);
+      pts.push([cx + sx * Math.cos(a) * outerRX, cy + sy * Math.sin(a) * outerRY, outerZ]);
     }
 
     ctx.beginPath();
@@ -843,17 +842,19 @@ export class StadiumRenderer {
 
     // Subtle concentric seat tier arcs inside corner
     for (let r = 1; r <= 3; r++) {
-      const rad = 28 + r * 26;
-      const wz = 14 + r * 13;
+      const frac = r / 3.4;
+      const rx = outerRX * frac;
+      const ry = outerRY * frac;
+      const wz = 8 + (outerZ - 8) * frac;
       ctx.beginPath();
       for (let i = 0; i <= 6; i++) {
-        const a = 0.08 + (i / 6) * (Math.PI * 0.5 - 0.16);
-        const sp = camera.worldToScreen(cx + sx * Math.cos(a) * rad, cy + sy * Math.sin(a) * rad, wz);
+        const a = 0.06 + (i / 6) * (Math.PI * 0.5 - 0.12);
+        const sp = camera.worldToScreen(cx + sx * Math.cos(a) * rx, cy + sy * Math.sin(a) * ry, wz);
         if (i === 0) ctx.moveTo(sp.x, sp.y);
         else ctx.lineTo(sp.x, sp.y);
       }
       ctx.strokeStyle = '#334155';
-      ctx.lineWidth = Math.max(1.5, 3 * camera.zoom);
+      ctx.lineWidth = Math.max(1.5, 2.8 * camera.zoom);
       ctx.stroke();
     }
   }
@@ -1120,11 +1121,11 @@ export class StadiumRenderer {
       }
     });
 
-    // 2. West & East Endline LED Boards (flanking left & right of goal mouths so goals stay uncluttered)
+    // 2. West & East Endline LED Boards (angled 3D face so visible behind goal endlines!)
     const halfGoalGap = PITCH.GOAL_WIDTH * 0.5 + 34;
     const endSegments = [
-      { y1: -halfH - 25, y2: -halfGoalGap },
-      { y1: halfGoalGap, y2: halfH + 25 },
+      { y1: -halfH - 20, y2: -halfGoalGap },
+      { y1: halfGoalGap, y2: halfH + 20 },
     ];
     for (const side of [-1, 1]) {
       const bx = side * (halfW + xMargin);
@@ -1134,14 +1135,14 @@ export class StadiumRenderer {
           ctx,
           camera,
           [
-            [bx, seg.y1, boardH],
-            [bx, seg.y2, boardH],
+            [bx + side * 12, seg.y1, boardH],
+            [bx + side * 12, seg.y2, boardH],
             [bx, seg.y2, 0],
             [bx, seg.y1, 0],
           ],
           col,
-          'rgba(248, 250, 252, 0.72)',
-          Math.max(1, 1.1 * zoom)
+          'rgba(248, 250, 252, 0.78)',
+          Math.max(1, 1.2 * zoom)
         );
       });
     }
@@ -1156,26 +1157,26 @@ export class StadiumRenderer {
   renderForeground(ctx, camera, halfW, halfH) {
     const runoffW = halfW + STADIUM_RUNOFF_X;
     const runoffH = halfH + STADIUM_RUNOFF_Y;
-    const xL = -runoffW + 4;
-    const xR = runoffW - 4;
+    const xL = -runoffW - 14;
+    const xR = runoffW + 14;
     const aisleXs = [-520, -260, 0, 260, 520];
     const zoom = camera.zoom;
 
-    // 1. South Corners (lower corners)
-    this.renderCornerStand(ctx, camera, -runoffW - 14, runoffH + 12, -1, 1);
-    this.renderCornerStand(ctx, camera, runoffW + 14, runoffH + 12, 1, 1);
+    // 1. South Corners (flush with South & West/East walls)
+    this.renderCornerStand(ctx, camera, -runoffW - 14, runoffH + 8, -1, 1, 86, 24);
+    this.renderCornerStand(ctx, camera, runoffW + 14, runoffH + 8, 1, 1, 86, 24);
 
-    // 2. South Touchline Stand (steep low-profile foreground tiers below runoff)
+    // 2. South Touchline Stand (3 cleanly stepped low-profile rows below runoff)
     const frontY = runoffH + 8;
-    const backY = runoffH + 120;
+    const backY = runoffH + 94;
 
     // Outer low concrete barrier wall along bottom runoff edge
     this.drawQuad(
       ctx,
       camera,
       [
-        [xL, frontY, 10],
-        [xR, frontY, 10],
+        [xL, frontY, 8],
+        [xR, frontY, 8],
         [xR, frontY, 0],
         [xL, frontY, 0],
       ],
@@ -1189,34 +1190,49 @@ export class StadiumRenderer {
       ctx,
       camera,
       [
-        [xL, frontY, 10],
-        [xR, frontY, 10],
-        [xR, backY, 54],
-        [xL, backY, 54],
+        [xL, frontY, 8],
+        [xR, frontY, 8],
+        [xR, backY, 22],
+        [xL, backY, 22],
       ],
       '#1E293B',
       '#334155',
       Math.max(1, zoom)
     );
 
-    // South Seat Rows (rendered front-to-back = ascending screen Y!)
-    for (let r = 0; r < 4; r++) {
-      const ry1 = runoffH + 14 + r * 26;
-      const ry2 = ry1 + 16;
-      const rz1 = 10 + r * 11;
-      const rz2 = rz1 + 6;
+    // South Outer Rear Perimeter Wall (finishes bottom silhouette cleanly)
+    this.drawQuad(
+      ctx,
+      camera,
+      [
+        [xL, backY, 22],
+        [xR, backY, 22],
+        [xR, backY, 0],
+        [xL, backY, 0],
+      ],
+      '#0F172A',
+      '#334155',
+      Math.max(1, zoom)
+    );
+
+    // South Seat Rows (3 rows, rendered front-to-back = ascending screen Y with clear separation)
+    for (let r = 0; r < 3; r++) {
+      const ry1 = runoffH + 16 + r * 26;
+      const ry2 = ry1 + 17;
+      const rz1 = 8 + r * 4;
+      const rz2 = rz1 + 3;
       this.drawQuad(
         ctx,
         camera,
         [
-          [xL + 8, ry1, rz1],
-          [xR - 8, ry1, rz1],
-          [xR - 8, ry2, rz2],
-          [xL + 8, ry2, rz2],
+          [xL + 14, ry1, rz1],
+          [xR - 14, ry1, rz1],
+          [xR - 14, ry2, rz2],
+          [xL + 14, ry2, rz2],
         ],
         r % 2 === 0 ? '#263449' : '#2F3F57'
       );
-      this.renderSeatBlocks(ctx, camera, xL + 16, xR - 16, ry1 + 6, rz1 + 2, aisleXs, zoom);
+      this.renderSeatBlocks(ctx, camera, xL + 22, xR - 22, ry1 + 6, rz1 + 1, aisleXs, zoom);
     }
 
     // South Stair Aisles
@@ -1225,17 +1241,17 @@ export class StadiumRenderer {
         ctx,
         camera,
         [
-          [ax - 12, frontY, 10],
-          [ax + 12, frontY, 10],
-          [ax + 12, backY, 54],
-          [ax - 12, backY, 54],
+          [ax - 12, frontY, 8],
+          [ax + 12, frontY, 8],
+          [ax + 12, backY, 22],
+          [ax - 12, backY, 22],
         ],
         '#475569'
       );
     });
 
     // Front Safety Rail
-    this.renderHorizontalRailing(ctx, camera, xL, xR, frontY, 10, 6, zoom);
+    this.renderHorizontalRailing(ctx, camera, xL, xR, frontY, 8, 6, zoom);
 
     // 3. South & Lower-Corner Spectators
     this.renderSpectatorBatch(ctx, camera, this.spectatorsFront);

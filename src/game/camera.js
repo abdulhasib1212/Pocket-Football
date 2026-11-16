@@ -45,24 +45,24 @@ export class Camera {
     const vw = this.viewportWidth;
     const vh = this.viewportHeight;
 
-    // Calculate base fit scales (OVERVIEW frames the entire stadium bowl)
-    const pitchTotalW = PITCH.WIDTH + 460;
-    const pitchTotalH = (PITCH.HEIGHT + 360) * PHYSICS.TILT_Y;
+    // Calculate base fit scales (OVERVIEW frames the entire 360° stadium bowl + corner floodlights)
+    const pitchTotalW = PITCH.WIDTH + 560;
+    const pitchTotalProjH = 1015;
 
     const fitScaleW = vw / pitchTotalW;
-    const fitScaleH = vh / pitchTotalH;
+    const fitScaleH = vh / pitchTotalProjH;
     const fullFitScale = Math.min(fitScaleW, fitScaleH);
 
-    const minOverviewZoom = vh < 520 ? 0.34 : 0.55;
+    const minOverviewZoom = vh < 520 ? 0.34 : 0.52;
     const minFollowZoom = vh < 520 ? 0.42 : 0.65;
 
     const stadiumSpanH = (PITCH.HEIGHT + 290) * PHYSICS.TILT_Y;
     const stadiumFitH = vh / stadiumSpanH;
 
     if (this.mode === 'OVERVIEW') {
-      // OVERVIEW: Centers pitch and frames entire 360° stadium
+      // OVERVIEW: Centers vertically on the 2.5D stadium silhouette (accounting for tall North upper tier vs South stand)
       this.targetX = 0;
-      this.targetY = -24;
+      this.targetY = -148;
       this.targetZoom = Math.max(minOverviewZoom, fullFitScale * 0.98);
     } else if (controlledPlayer && secondPlayer) {
       // LOCAL 2P FOLLOW MODE: Keep both human players, ball, and surrounding stands in view
@@ -79,8 +79,8 @@ export class Camera {
       const spanW = Math.max(420, (maxX - minX) + 340);
       const spanH = Math.max(320, (maxY - minY + 280) * PHYSICS.TILT_Y);
       const fit2P = Math.min(vw / spanW, vh / spanH) * this.userZoomMultiplier;
-      const maxFollowZoom = vh < 520 ? 0.62 : 0.92;
-      const followScaleH = vh < 520 ? stadiumFitH * 1.12 : stadiumFitH * 1.01;
+      const maxFollowZoom = vh < 520 ? 0.62 : 0.88;
+      const followScaleH = vh < 520 ? stadiumFitH * 1.12 : stadiumFitH * 0.99;
       const baseWide = Math.min(maxFollowZoom, Math.max(minFollowZoom, followScaleH)) * this.userZoomMultiplier;
       this.targetZoom = Math.max(Math.max(minOverviewZoom, fullFitScale * 0.96), Math.min(baseWide, fit2P));
     } else {
@@ -104,8 +104,8 @@ export class Camera {
       }
 
       // Close enough for dynamic arcade tracking while framing North & South stadium stands
-      const maxFollowZoom = vh < 520 ? 0.62 : 0.92;
-      const followScaleH = vh < 520 ? stadiumFitH * 1.12 : stadiumFitH * 1.01;
+      const maxFollowZoom = vh < 520 ? 0.62 : 0.88;
+      const followScaleH = vh < 520 ? stadiumFitH * 1.12 : stadiumFitH * 0.99;
       const wideZoom = Math.min(maxFollowZoom, Math.max(minFollowZoom, followScaleH)) * this.userZoomMultiplier;
       this.targetZoom = wideZoom;
     }
@@ -116,9 +116,9 @@ export class Camera {
       const visibleHalfW = (vw * 0.5) / this.targetZoom;
       const visibleHalfH = (vh * 0.5) / (this.targetZoom * PHYSICS.TILT_Y);
 
-      const maxAllowedX = (PITCH.WIDTH * 0.5) + 245;
+      const maxAllowedX = (PITCH.WIDTH * 0.5) + 250;
       const minAllowedY = -(PITCH.HEIGHT * 0.5 + 310);
-      const maxAllowedY = (PITCH.HEIGHT * 0.5) + 170;
+      const maxAllowedY = (PITCH.HEIGHT * 0.5) + 150;
 
       if (maxAllowedX > visibleHalfW) {
         const clampX = maxAllowedX - visibleHalfW;
