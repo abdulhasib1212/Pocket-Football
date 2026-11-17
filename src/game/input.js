@@ -73,6 +73,8 @@ export class InputManager {
         e.preventDefault();
       }
 
+      if (e.repeat) return;
+
       if (this.localMultiplayer) {
         // --- PLAYER 1: Space (Shoot/Tackle), X (Pass), Q (Switch) ---
         if (e.code === 'Space' || e.key === ' ') {

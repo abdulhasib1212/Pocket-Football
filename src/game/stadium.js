@@ -751,7 +751,7 @@ export class StadiumRenderer {
       );
 
       // Molded individual seats along Y (well-spaced to match spectators)
-      if (zoom > 0.50) {
+      if (zoom > 0.30) {
         const seatColor = dirX < 0 ? 'rgba(56, 189, 248, 0.36)' : 'rgba(248, 113, 113, 0.36)';
         ctx.fillStyle = seatColor;
         const w = Math.max(3, 8 * zoom);
@@ -863,7 +863,7 @@ export class StadiumRenderer {
    * Renders individual molded seats along a horizontal row (visible in empty spots & around spectators)
    */
   renderSeatBlocks(ctx, camera, xStart, xEnd, wy, wz, aisleXs, zoom) {
-    if (zoom < 0.52) return;
+    if (zoom < 0.30) return;
     const seatW = Math.max(3, 9.5 * zoom);
     const seatH = Math.max(2, 6 * zoom);
 
@@ -978,7 +978,8 @@ export class StadiumRenderer {
     const goalBoost = this.goalCelebration;
     const exc = Math.max(this.excitement, goalBoost);
     const atlas = this.atlasCanvas;
-    const useSimpleLod = zoom < 0.56 || !atlas;
+    const useSimpleLod = !atlas;
+    const spriteScaleZoom = Math.max(zoom, 0.40);
 
     for (let i = 0; i < list.length; i++) {
       const s = list[i];
@@ -1006,7 +1007,7 @@ export class StadiumRenderer {
 
       const activeEnergy = Math.max(exc * (s.waver ? 0.95 : 0.45), teamWave);
       const bobSpeed = 2.6 + activeEnergy * 8.5;
-      const bobAmp = (0.4 + activeEnergy * 4.4) * zoom;
+      const bobAmp = (0.4 + activeEnergy * 4.4) * spriteScaleZoom;
       const bobY = Math.abs(Math.sin(t * bobSpeed + s.phase)) * bobAmp;
 
       // Choose animation pose frame (0 idle, 1 one-arm cheer, 2 two-arm scarf wave)
@@ -1019,12 +1020,12 @@ export class StadiumRenderer {
         pose = 1;
       }
 
-      const drawW = CROWD_SPRITE_W * zoom * s.scale;
-      const drawH = CROWD_SPRITE_H * zoom * s.scale;
+      const drawW = CROWD_SPRITE_W * spriteScaleZoom * s.scale;
+      const drawH = CROWD_SPRITE_H * spriteScaleZoom * s.scale;
 
       if (useSimpleLod) {
-        // Ultra-fast LOD primitive for wide mobile overview zoom or headless fallback
-        const r = Math.max(1.8, 3.2 * zoom * s.scale);
+        // Fallback only when offscreen atlas canvas is unavailable (e.g., headless tests)
+        const r = Math.max(1.8, 3.2 * spriteScaleZoom * s.scale);
         ctx.fillStyle = s.variant < 3 ? this.homeShirt : s.variant < 6 ? this.awayShirt : '#CBD5E1';
         ctx.fillRect(baseScreen.x - r, baseScreen.y - r * 1.6 - bobY, r * 2, r * 2);
       } else {

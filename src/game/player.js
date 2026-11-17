@@ -609,7 +609,7 @@ export class Player {
     return Math.abs(projY) <= PITCH.GOAL_WIDTH * 1.35;
   }
 
-  performKick(ball, dirX, dirY, power = PHYSICS.SHOT_POWER, height = PHYSICS.SHOT_HEIGHT, isShot = null) {
+  performKick(ball, dirX, dirY, power = PHYSICS.SHOT_POWER, height = PHYSICS.SHOT_HEIGHT, isShot = null, curveSpin = 0) {
     if (this.kickCooldown > 0 || this.isStumbled) return false;
 
     const dx = ball.x - this.x;
@@ -649,6 +649,7 @@ export class Player {
       ball.vx = kx * power;
       ball.vy = ky * power;
       ball.vz = Math.min(220, height);
+      ball.curveSpin = curveSpin || 0;
       ball.lastKickedBy = this;
       ball.pendingPassFrom = null;
 
@@ -691,7 +692,8 @@ export class Player {
         }
         ball.vx = (passDx / passDist) * power;
         ball.vy = (passDy / passDist) * power;
-        ball.vz = 0; // Ground pass
+        ball.vz = 0;
+        ball.curveSpin = 0; // Ground pass
         ball.lastKickedBy = this;
         ball.pendingPassFrom = this;
         ball.lastPassInfo = null;

@@ -1108,22 +1108,34 @@ export class GameEngine {
       else this.passCharge = v;
     };
 
-    // --- ASSISTED SHOOTING / TACKLE ---
+    // --- HYBRID TAP-TO-SHOOT + OPTIONAL HOLD POWER GAUGE / TACKLE ---
     if (canShoot) {
       if (this.input.isKickHeld(slot)) {
-        setShotCharging(true);
-        setShotCharge(Math.min(1.0, getShotCharge() + dt * 1.65));
+        if (!getShotCharging()) {
+          setShotCharging(true);
+          setShotCharge(0.60); // Fast baseline charge so quick taps always fire powerfully
+        } else {
+          setShotCharge(Math.min(1.0, getShotCharge() + dt * 1.65));
+        }
         this.input.consumeKick(slot);
       } else if (getShotCharging() || this.input.consumeKick(slot)) {
-        const effectiveCharge = getShotCharging() ? getShotCharge() : 0.38;
+        const effectiveCharge = getShotCharging() ? Math.max(0.60, getShotCharge()) : 0.64;
         const shotDir = this.computeAssistedShotDirection(player, moveDir);
 
-        const minPower = 390;
-        const maxPower = 660;
+        const minPower = 440;
+        const maxPower = 710;
         const power = minPower + effectiveCharge * (maxPower - minPower);
-        const height = 75 + effectiveCharge * 115;
+        const height = 110 + effectiveCharge * 75;
 
-        const success = player.performKick(this.ball, shotDir.x, shotDir.y, power, height);
+        const success = player.performKick(
+          this.ball,
+          shotDir.x,
+          shotDir.y,
+          power,
+          height,
+          null,
+          shotDir.curveSpin || 0
+        );
         if (success) {
           this.audio.playShoot(effectiveCharge);
         }
@@ -1141,15 +1153,15 @@ export class GameEngine {
       }
     }
 
-    // --- PASSING ---
+    // --- SNAPPY PASSING ---
     if (hasBall) {
       if (this.input.isPassHeld(slot)) {
         setPassCharging(true);
-        setPassCharge(Math.min(1.0, getPassCharge() + dt * 2.2));
+        setPassCharge(Math.min(1.0, Math.max(0.45, getPassCharge()) + dt * 2.4));
         this.input.consumePass(slot);
       } else if (getPassCharging() || this.input.consumePass(slot)) {
-        const effectivePassCharge = getPassCharging() ? getPassCharge() : 0.35;
-        const minPass = 280;
+        const effectivePassCharge = getPassCharging() ? Math.max(0.45, getPassCharge()) : 0.52;
+        const minPass = 290;
         const maxPass = 540;
         const power = minPass + effectivePassCharge * (maxPass - minPass);
 
@@ -1309,12 +1321,15 @@ export class GameEngine {
 
     const startPos = this.camera.worldToScreen(this.ball.x, this.ball.y, 0);
     const targetPos = this.camera.worldToScreen(shotDir.targetX, shotDir.targetY, 0);
-    const guideLen = 115;
-    const midPos = this.camera.worldToScreen(
-      this.ball.x + shotDir.x * guideLen,
-      this.ball.y + shotDir.y * guideLen,
-      0
-    );
+    const guideLen = 135;
+    const curveSpin = shotDir.curveSpin || 0;
+    const endX = this.ball.x + (shotDir.straightX ?? shotDir.x) * guideLen;
+    const endY = this.ball.y + (shotDir.straightY ?? shotDir.y) * guideLen;
+    // Control point bends along initial launch vector so the dotted guide previews the exact curl
+    const ctrlX = this.ball.x + shotDir.x * (guideLen * 0.55);
+    const ctrlY = this.ball.y + shotDir.y * (guideLen * 0.55);
+    const ctrlPos = this.camera.worldToScreen(ctrlX, ctrlY, 0);
+    const midPos = this.camera.worldToScreen(endX, endY, 0);
     const rgba0 = slot === 'p2' ? 'rgba(34, 211, 238, 0.85)' : 'rgba(250, 204, 21, 0.85)';
     const rgbaEnd = slot === 'p2' ? 'rgba(34, 211, 238, 0)' : 'rgba(250, 204, 21, 0)';
 
@@ -1327,7 +1342,11 @@ export class GameEngine {
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
     ctx.moveTo(startPos.x, startPos.y);
-    ctx.lineTo(midPos.x, midPos.y);
+    if (Math.abs(curveSpin) > 0.05) {
+      ctx.quadraticCurveTo(ctrlPos.x, ctrlPos.y, midPos.x, midPos.y);
+    } else {
+      ctx.lineTo(midPos.x, midPos.y);
+    }
     ctx.stroke();
 
     ctx.setLineDash([]);
@@ -1490,12 +1509,41 @@ export class GameEngine {
     const dx = targetX - player.x;
     const dy = targetY - player.y;
     const dist = Math.hypot(dx, dy) || 1;
+    const straightAngle = Math.atan2(dy, dx);
+
+    // Compute natural Magnus curve spin for angled/wide shots and corner finesse bends
+    const absDx = Math.max(95, Math.abs(dx));
+    const angleSteepness = Math.min(1.0, Math.abs(dy) / absDx);
+    let curveSpin = 0;
+
+    if (angleSteepness > 0.20) {
+      // Wide or acute ("weird") angle: whip an in-swinger bending cleanly into the goal mouth!
+      const curveSign = -(Math.sign(dy) || 1) * attackDir;
+      curveSpin = curveSign * (0.38 + angleSteepness * 0.92);
+    } else if (Math.abs(targetY) > 18) {
+      // Central finesse shot aimed toward a post: subtle curl away from keeper into corner
+      const curveSign = Math.sign(targetY) * attackDir;
+      curveSpin = curveSign * 0.48;
+    }
+
+    // Offset initial launch angle by half the expected arc turn so the curved flight still lands on target!
+    const tFlightEst = Math.min(0.68, dist / 560);
+    const estTurn = curveSpin * 0.82 * tFlightEst;
+    let launchAngle = straightAngle - 0.5 * estTurn;
+
+    // Guarantee forward launch component toward goal even from extreme near-byline positions
+    if (Math.cos(launchAngle) * attackDir < 0.08) {
+      launchAngle = Math.atan2(Math.sin(launchAngle), attackDir * 0.08);
+    }
 
     return {
-      x: dx / dist,
-      y: dy / dist,
+      x: Math.cos(launchAngle),
+      y: Math.sin(launchAngle),
+      straightX: dx / dist,
+      straightY: dy / dist,
       targetX,
       targetY,
+      curveSpin,
       isAssisted: true,
     };
   }

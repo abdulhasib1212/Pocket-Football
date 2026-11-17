@@ -23,6 +23,7 @@ export class Ball {
     this.pendingPassFrom = null;
     this.lastPassInfo = null;
     this.shotAtGoalTeam = null;
+    this.curveSpin = 0; // Lateral Magnus swerve (rad/s) for curled shots
     this.carrier = null; // Currently controlling dribbler
     this.isRestartProtected = false;
     this.trail = [];
@@ -39,6 +40,7 @@ export class Ball {
     this.pendingPassFrom = null;
     this.lastPassInfo = null;
     this.shotAtGoalTeam = null;
+    this.curveSpin = 0;
     this.carrier = null;
     this.isRestartProtected = false;
     this.trail = [];
@@ -70,6 +72,7 @@ export class Ball {
         this.vx = this.carrier.vx;
         this.vy = this.carrier.vy;
         this.vz = 0;
+        this.curveSpin = 0;
 
         const speed = Math.hypot(this.vx, this.vy);
         if (speed > 5) {
@@ -87,6 +90,22 @@ export class Ball {
     // 1. Apply gravity to vertical axis (Z)
     if (this.z > 0 || this.vz !== 0) {
       this.vz -= PHYSICS.GRAVITY * dt;
+    }
+
+    // Apply lateral Magnus curve spin during fast flight
+    const preSpeed = Math.hypot(this.vx, this.vy);
+    if (Math.abs(this.curveSpin) > 0.01 && preSpeed > 85) {
+      const spinFactor = Math.min(1.15, preSpeed / 520);
+      const dAngle = this.curveSpin * spinFactor * dt;
+      const cosA = Math.cos(dAngle);
+      const sinA = Math.sin(dAngle);
+      const nvx = this.vx * cosA - this.vy * sinA;
+      const nvy = this.vx * sinA + this.vy * cosA;
+      this.vx = nvx;
+      this.vy = nvy;
+      this.curveSpin *= Math.pow(0.988, dt * 60);
+    } else if (preSpeed <= 85) {
+      this.curveSpin = 0;
     }
 
     // 2. Integrate positions
@@ -146,10 +165,12 @@ export class Ball {
     // 5. Pitch boundary collisions, Crossbar, Posts, and Goal Detection
     this.handleBoundaries(onGoalScored, onGoalKick, audio);
 
-    // 6. Ball speed trail for powerful shots
-    if (speed > 350) {
-      this.trail.push({ x: this.x, y: this.y, z: this.z, alpha: 0.6 });
-      if (this.trail.length > 6) this.trail.shift();
+    // 6. Ball speed trail for powerful & curving shots
+    if (speed > 330) {
+      const isCurving = Math.abs(this.curveSpin) > 0.15;
+      this.trail.push({ x: this.x, y: this.y, z: this.z, alpha: isCurving ? 0.72 : 0.6, curved: isCurving });
+      const maxTrail = isCurving ? 10 : 6;
+      while (this.trail.length > maxTrail) this.trail.shift();
     } else if (this.trail.length > 0) {
       this.trail.shift();
     }
@@ -166,9 +187,11 @@ export class Ball {
     if (this.y < -halfH + this.radius) {
       this.y = -halfH + this.radius;
       this.vy = -this.vy * 0.6;
+      this.curveSpin = 0;
     } else if (this.y > halfH - this.radius) {
       this.y = halfH - this.radius;
       this.vy = -this.vy * 0.6;
+      this.curveSpin = 0;
     }
 
     // B. Check 3D Crossbar Collision (Left & Right Goals)
@@ -335,10 +358,13 @@ export class Ball {
       for (let i = 0; i < this.trail.length; i++) {
         const pt = this.trail[i];
         const screenPt = camera.worldToScreen(pt.x, pt.y, pt.z);
-        const r = this.radius * camera.zoom * (0.6 + 0.4 * (i / this.trail.length));
+        const frac = i / this.trail.length;
+        const r = this.radius * camera.zoom * (0.55 + 0.45 * frac);
         ctx.beginPath();
         ctx.arc(screenPt.x, screenPt.y, r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${pt.alpha * (i / this.trail.length) * 0.4})`;
+        ctx.fillStyle = pt.curved
+          ? `rgba(253, 224, 71, ${pt.alpha * frac * 0.42})`
+          : `rgba(255, 255, 255, ${pt.alpha * frac * 0.4})`;
         ctx.fill();
       }
       ctx.restore();
