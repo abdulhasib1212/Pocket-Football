@@ -551,7 +551,11 @@ export class GameEngine {
         this.audio.playFinalWhistleCrowd(outcome);
       }
       if (this.uiHooks.onMatchEnd) {
-        setTimeout(() => {
+        if (this.goldenGoalEndTimeoutId) {
+          clearTimeout(this.goldenGoalEndTimeoutId);
+        }
+        this.goldenGoalEndTimeoutId = setTimeout(() => {
+          this.goldenGoalEndTimeoutId = null;
           this.uiHooks.onMatchEnd({
             score: Object.assign({}, this.score),
             homeTeam: this.homeTeam,
@@ -643,7 +647,7 @@ export class GameEngine {
       type: 'GOAL_KICK',
       team: defendingTeam,
       taker: gk || null,
-      timer: this.isMenuIdle ? 0.9 : (isBlue ? 4.0 : 1.8),
+      timer: this.isMenuIdle ? 0.9 : (isHumanKick ? 4.0 : 1.8),
       minOpX,
       isBlue,
     };
@@ -800,6 +804,10 @@ export class GameEngine {
 
   stop() {
     this.isRunning = false;
+    if (this.goldenGoalEndTimeoutId) {
+      clearTimeout(this.goldenGoalEndTimeoutId);
+      this.goldenGoalEndTimeoutId = null;
+    }
     window.removeEventListener('resize', this.resize);
     if (this.input && this.input.destroy) {
       this.input.destroy();
@@ -887,7 +895,7 @@ export class GameEngine {
     // Goal celebration cooldown
     if (this.goalCelebrationTimer > 0) {
       this.goalCelebrationTimer -= dt;
-      if (this.goalCelebrationTimer <= 0) {
+      if (this.goalCelebrationTimer <= 0 && !this.isFullTime) {
         this.resetPositions(true);
       }
     } else if (!this.isFullTime && !this.isHalfTime && !this.isMenuIdle) {
@@ -1133,7 +1141,7 @@ export class GameEngine {
           shotDir.y,
           power,
           height,
-          null,
+          shotDir.isAssisted ? true : null,
           shotDir.curveSpin || 0
         );
         if (success) {

@@ -468,7 +468,7 @@ export class Player {
   }
 
   performTackle(ball, allPlayers, audio) {
-    if (this.tackleCooldown > 0 || this.kickCooldown > 0 || this.isStumbled) return false;
+    if (this.tackleCooldown > 0 || this.kickCooldown > 0 || this.isStumbled || ball.hasScoredInNet) return false;
     if (ball.isRestartProtected && ball.carrier && ball.carrier.team !== this.team) return false;
 
     // Check if there is an opponent carrier within auto-target challenge range (65 units)
@@ -595,8 +595,8 @@ export class Player {
     const dir = teamConfig.direction || 1;
     const attackGoalX = teamConfig.targetGoalX ?? (dir === 1 ? PITCH.WIDTH / 2 : -PITCH.WIDTH / 2);
 
-    // Must be aimed toward the opponent's goal
-    if (kx * dir <= 0.25) return false;
+    // Must be aimed toward the opponent's goal (supports steep near-byline curved shots)
+    if (kx * dir <= 0.08) return false;
 
     // Must be within realistic attacking/shooting range
     const distToGoalLineX = (attackGoalX - this.x) * dir;
@@ -610,7 +610,7 @@ export class Player {
   }
 
   performKick(ball, dirX, dirY, power = PHYSICS.SHOT_POWER, height = PHYSICS.SHOT_HEIGHT, isShot = null, curveSpin = 0) {
-    if (this.kickCooldown > 0 || this.isStumbled) return false;
+    if (this.kickCooldown > 0 || this.isStumbled || ball.hasScoredInNet) return false;
 
     const dx = ball.x - this.x;
     const dy = ball.y - this.y;
@@ -669,7 +669,7 @@ export class Player {
   }
 
   performPass(ball, targetPlayer, power = PHYSICS.PASS_POWER) {
-    if (this.kickCooldown > 0 || !targetPlayer || this.isStumbled) return false;
+    if (this.kickCooldown > 0 || !targetPlayer || this.isStumbled || ball.hasScoredInNet) return false;
 
     const dx = ball.x - this.x;
     const dy = ball.y - this.y;

@@ -53,7 +53,7 @@ export class PhysicsSystem {
   }
 
   static resolvePlayerBall(player, ball, audio) {
-    if (!ball) return;
+    if (!ball || ball.hasScoredInNet) return;
 
     // During protected kickoff / goal-kick restarts, opponents cannot steal or intercept the ball
     if (ball.isRestartProtected && ball.carrier && ball.carrier.team !== player.team) {

@@ -203,9 +203,7 @@ window.addEventListener('DOMContentLoaded', () => {
   } catch (e) {}
 
   const isCoarsePointer = () =>
-    (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
-    'ontouchstart' in window ||
-    navigator.maxTouchPoints > 0;
+    Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
   let hasDetectedTouch = isCoarsePointer();
 
@@ -236,8 +234,22 @@ window.addEventListener('DOMContentLoaded', () => {
   };
 
   window.addEventListener('touchstart', () => {
-    if (!hasDetectedTouch) {
+    if (appState === 'PLAYING' && !hasDetectedTouch) {
       hasDetectedTouch = true;
+      updateTouchControlsVisibility();
+    }
+  }, { passive: true });
+
+  window.addEventListener('keydown', () => {
+    if (hasDetectedTouch && !isCoarsePointer()) {
+      hasDetectedTouch = false;
+      updateTouchControlsVisibility();
+    }
+  });
+
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && hasDetectedTouch && !isCoarsePointer()) {
+      hasDetectedTouch = false;
       updateTouchControlsVisibility();
     }
   }, { passive: true });
