@@ -202,10 +202,23 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   } catch (e) {}
 
-  const isCoarsePointer = () =>
-    Boolean(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  const hasMatchMedia = (query) =>
+    Boolean(window.matchMedia && window.matchMedia(query).matches);
 
-  let hasDetectedTouch = isCoarsePointer();
+  // Detect genuine phones/tablets vs touchscreen laptops (Windows/ChromeOS/Linux laptops can report
+  // pointer:coarse or any-hover:false in fullscreen/hybrid drivers even when played with keyboard & mouse).
+  const isMobileOrTabletDevice = () => {
+    const ua = navigator.userAgent || '';
+    const uaDataMobile = Boolean(navigator.userAgentData && navigator.userAgentData.mobile);
+    const mobileUa = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua);
+    const iPadOs = /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+    const isPhoneSized = Math.min(window.innerWidth, window.innerHeight) <= 600 && hasMatchMedia('(pointer: coarse)');
+    return uaDataMobile || mobileUa || iPadOs || isPhoneSized;
+  };
+
+  let hasDetectedTouch = isMobileOrTabletDevice();
+  let lastDesktopInputTime = 0;
+  let lastTouchInputTime = 0;
 
   let resetTouchJoystickVisual = () => {};
 
@@ -217,14 +230,18 @@ window.addEventListener('DOMContentLoaded', () => {
     if (anyOverlayOpen) return false;
     if (touchControlsPref === 'on') return true;
     if (touchControlsPref === 'off') return false;
-    return hasDetectedTouch || isCoarsePointer();
+    return hasDetectedTouch;
   };
 
   const updateTouchControlsVisibility = () => {
+    if (lastTouchInputTime === 0 && lastDesktopInputTime === 0) {
+      hasDetectedTouch = isMobileOrTabletDevice();
+    }
     const show = shouldShowTouchControls();
     if (touchControlsOverlay) {
       touchControlsOverlay.classList.toggle('hidden', !show);
     }
+    document.body.classList.toggle('touch-hud-active', show);
     if (!show) {
       resetTouchJoystickVisual();
     }
@@ -234,23 +251,31 @@ window.addEventListener('DOMContentLoaded', () => {
   };
 
   window.addEventListener('touchstart', () => {
-    if (appState === 'PLAYING' && !hasDetectedTouch) {
+    if (appState !== 'PLAYING') return;
+    // Ignore stray/synthetic touch right after keyboard or mouse activity on desktop/laptops
+    if (!isMobileOrTabletDevice() && performance.now() - lastDesktopInputTime < 1500) return;
+    lastTouchInputTime = performance.now();
+    if (!hasDetectedTouch) {
       hasDetectedTouch = true;
       updateTouchControlsVisibility();
     }
   }, { passive: true });
 
   window.addEventListener('keydown', () => {
-    if (hasDetectedTouch && !isCoarsePointer()) {
+    lastDesktopInputTime = performance.now();
+    if (hasDetectedTouch && (!isMobileOrTabletDevice() || appState === 'PLAYING')) {
       hasDetectedTouch = false;
       updateTouchControlsVisibility();
     }
   });
 
   window.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'mouse' && hasDetectedTouch && !isCoarsePointer()) {
-      hasDetectedTouch = false;
-      updateTouchControlsVisibility();
+    if (e.pointerType === 'mouse' && !isMobileOrTabletDevice()) {
+      lastDesktopInputTime = performance.now();
+      if (hasDetectedTouch) {
+        hasDetectedTouch = false;
+        updateTouchControlsVisibility();
+      }
     }
   }, { passive: true });
 
@@ -1257,8 +1282,12 @@ window.addEventListener('DOMContentLoaded', () => {
   ['fullscreenchange', 'webkitfullscreenchange', 'mozfullscreenchange', 'MSFullscreenChange'].forEach((evt) => {
     document.addEventListener(evt, () => {
       updateFullscreenButtons();
+      updateTouchControlsVisibility();
       if (activeEngine) {
-        setTimeout(() => activeEngine.resize(), 60);
+        setTimeout(() => {
+          activeEngine.resize();
+          updateTouchControlsVisibility();
+        }, 60);
       }
     });
   });
@@ -1698,7 +1727,7 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   // Adaptive menu footer hint for touch vs desktop devices
-  if (menuControlsHint && isCoarsePointer()) {
+  if (menuControlsHint && isMobileOrTabletDevice()) {
     menuControlsHint.textContent = 'Touch Controls Ready · Left thumb moves · Right buttons Pass, Shoot & Tackle';
   }
 

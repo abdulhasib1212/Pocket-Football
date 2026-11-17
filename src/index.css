@@ -1702,10 +1702,14 @@
 }
 
 /* Mobile & Touch Responsiveness */
-@media (max-width: 900px), (pointer: coarse) {
+@media (max-width: 900px) {
   .arcade-footer {
     display: none;
   }
+}
+
+body.touch-hud-active .arcade-footer {
+  display: none;
 }
 
 @media (max-width: 768px) {
