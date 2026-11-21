@@ -9,7 +9,8 @@
     <meta property="og:description" content="A browser-based 2.5D arcade 3v3 football game with professional broadcast presentation, crowd ambience, quick match, and 8-team knockout tournament." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" type="image/png" href="./assets/aistudio/Pocket_Football_League_logo_81701770.png" />
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="preload" as="image" href="./menu_logo.webp" fetchpriority="high" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -105,9 +106,13 @@
             <div class="menu-logo-box">
               <div class="menu-logo-frame">
                 <img
-                  src="./assets/aistudio/Pocket_Football_League_logo_81701770.png"
+                  src="./menu_logo.webp"
                   alt="Pocket Football League 2026 · 3v3 Arcade"
                   class="menu-logo-img"
+                  width="720"
+                  height="350"
+                  decoding="async"
+                  fetchpriority="high"
                 />
               </div>
               <h1 class="sr-only">Pocket Football League 2026 · 3v3 Arcade</h1>

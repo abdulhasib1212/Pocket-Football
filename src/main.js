@@ -34,6 +34,15 @@ window.addEventListener('DOMContentLoaded', () => {
   // Helper to play tactile UI click
   const clickSound = () => audio.playClick();
 
+  // Preload lightweight WebP club crests immediately for instant picker & HUD rendering
+  TEAMS_LIST.forEach((team) => {
+    if (team.logo && typeof Image !== 'undefined') {
+      const preload = new Image();
+      preload.decoding = 'async';
+      preload.src = team.logo;
+    }
+  });
+
   const setBadgeContent = (container, team, variantClass = 'club-logo-inline') => {
     if (!container) return;
     if (team && team.logo) {
@@ -44,6 +53,7 @@ window.addEventListener('DOMContentLoaded', () => {
       img.src = team.logo;
       img.alt = `${team.name || 'Club'} crest`;
       img.className = 'club-logo-img';
+      img.decoding = 'async';
       img.referrerPolicy = 'no-referrer';
       wrap.appendChild(img);
       container.appendChild(wrap);
@@ -54,7 +64,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
   const clubLogoHtml = (team, variantClass = 'club-logo-card') => {
     if (team && team.logo) {
-      return `<span class="club-logo-frame ${variantClass}"><img src="${team.logo}" alt="${team.name || 'Club'} crest" class="club-logo-img" referrerpolicy="no-referrer" /></span>`;
+      return `<span class="club-logo-frame ${variantClass}"><img src="${team.logo}" alt="${team.name || 'Club'} crest" class="club-logo-img" decoding="async" referrerpolicy="no-referrer" /></span>`;
     }
     return `<span>${team?.badge || '⚽'}</span>`;
   };

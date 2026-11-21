@@ -1,14 +1,14 @@
 /**
  * Pocket Football League - Constants & Configuration
  */
-import blueCityCrest from '../assets/images/blue_city_crest_1795280512073.jpg';
-import redUnitedCrest from '../assets/images/red_united_crest_1795280511608.jpg';
-import madridBlancosCrest from '../assets/images/madrid_blancos_crest_1795280511218.jpg';
-import barcaBlaugranaCrest from '../assets/images/barca_blaugrana_crest_1795280512398.jpg';
-import milanDevilsCrest from '../assets/images/milan_devils_crest_1795280511619.jpg';
-import munichTitansCrest from '../assets/images/munich_titans_crest_1795280512909.jpg';
-import londonGunnersCrest from '../assets/images/london_gunners_crest_1795280512053.jpg';
-import parisStarsCrest from '../assets/images/paris_stars_crest_1795280512539.jpg';
+import blueCityCrest from '../assets/images/blue_city_crest_1795280512073.webp';
+import redUnitedCrest from '../assets/images/red_united_crest_1795280511608.webp';
+import madridBlancosCrest from '../assets/images/madrid_blancos_crest_1795280511218.webp';
+import barcaBlaugranaCrest from '../assets/images/barca_blaugrana_crest_1795280512398.webp';
+import milanDevilsCrest from '../assets/images/milan_devils_crest_1795280511619.webp';
+import munichTitansCrest from '../assets/images/munich_titans_crest_1795280512909.webp';
+import londonGunnersCrest from '../assets/images/london_gunners_crest_1795280512053.webp';
+import parisStarsCrest from '../assets/images/paris_stars_crest_1795280512539.webp';
 
 export const PITCH = {
   // World coordinates (centered at 0, 0)

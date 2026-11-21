@@ -391,7 +391,7 @@
 
 .menu-logo-frame {
   width: 100%;
-  aspect-ratio: 16 / 7.8;
+  aspect-ratio: 720 / 350;
   overflow: hidden;
   border-radius: 12px;
   background: #0d1828;
@@ -404,8 +404,8 @@
   height: 100%;
   display: block;
   object-fit: cover;
-  object-position: center 56%;
-  transform: scale(1.18);
+  object-position: center;
+  background-color: #0d1828;
   pointer-events: none;
 }
 
