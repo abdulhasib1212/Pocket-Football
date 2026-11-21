@@ -3,6 +3,7 @@
  * Manages the 60fps requestAnimationFrame game loop, state, entities, scoring, and UI synchronization.
  */
 import { PITCH, PHYSICS, TEAMS } from './constants.js';
+import { drawClubCrestCanvas } from './crests.js';
 import { Camera } from './camera.js';
 import { Pitch } from './pitch.js';
 import { Ball } from './ball.js';
@@ -61,14 +62,6 @@ export class GameEngine {
       targetGoalX: -PITCH.WIDTH / 2,
       ownGoalX: PITCH.WIDTH / 2,
     });
-    const loadLogoImage = (src) => {
-      if (!src || typeof Image === 'undefined') return null;
-      const img = new Image();
-      img.src = src;
-      return img;
-    };
-    this.homeLogoImg = loadLogoImage(this.homeTeam.logo);
-    this.awayLogoImg = loadLogoImage(this.awayTeam.logo);
     if (this.pitch.setTeamColors) {
       this.pitch.setTeamColors(this.homeTeam, this.awayTeam);
     }
@@ -1690,10 +1683,8 @@ export class GameEngine {
     const cy = height / 2 - 25;
 
     const scoringTeamInfo = this.scoringTeam === 'blue' ? this.homeTeam : this.awayTeam;
-    const scoringLogoImg = this.scoringTeam === 'blue' ? this.homeLogoImg : this.awayLogoImg;
     const teamColor = scoringTeamInfo.accentColor || scoringTeamInfo.shirtColor || (this.scoringTeam === 'blue' ? '#38BDF8' : '#F87171');
     const teamName = scoringTeamInfo.name.toUpperCase();
-    const teamBadge = scoringTeamInfo.badge || '⚽';
     const scorerName = this.lastScorer ? `${this.lastScorer.name.toUpperCase()} (#${this.lastScorer.number})` : 'GOAL!';
     const hasAssist = !!(this.lastAssister && this.lastAssister !== this.lastScorer);
 
@@ -1719,31 +1710,16 @@ export class GameEngine {
     ctx.font = "900 22px 'Impact', 'Arial Black', sans-serif";
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const hasCrestImg = scoringLogoImg && scoringLogoImg.complete && scoringLogoImg.naturalWidth > 0;
-    const bannerTitle = hasCrestImg
-      ? (this.isGoldenGoal ? `GOLDEN GOAL! · ${teamName}` : `GOOOAL! · ${teamName}`)
-      : (this.isGoldenGoal ? `⚡ GOLDEN GOAL! · ${teamBadge} ${teamName}` : `⚽ GOOOAL! · ${teamBadge} ${teamName}`);
-
-    if (hasCrestImg) {
-      const titleW = ctx.measureText(bannerTitle).width;
-      const iconSize = 26;
-      const gap = 10;
-      const totalW = iconSize + gap + titleW;
-      const startX = cx - totalW / 2;
-      const iconCx = startX + iconSize / 2;
-      const iconCy = ry + 18;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(iconCx, iconCy, iconSize / 2, 0, Math.PI * 2);
-      ctx.clip();
-      ctx.drawImage(scoringLogoImg, iconCx - iconSize / 2 - 2, iconCy - iconSize / 2 - 2, iconSize + 4, iconSize + 4);
-      ctx.restore();
-      ctx.textAlign = 'left';
-      ctx.fillText(bannerTitle, startX + iconSize + gap, ry + 18);
-      ctx.textAlign = 'center';
-    } else {
-      ctx.fillText(bannerTitle, cx, ry + 18);
-    }
+    const bannerTitle = this.isGoldenGoal ? `GOLDEN GOAL! · ${teamName}` : `GOOOAL! · ${teamName}`;
+    const titleW = ctx.measureText(bannerTitle).width;
+    const iconSize = 24;
+    const gap = 9;
+    const totalW = iconSize + gap + titleW;
+    const startX = cx - totalW / 2;
+    drawClubCrestCanvas(ctx, scoringTeamInfo, startX + iconSize / 2, ry + 18, iconSize);
+    ctx.textAlign = 'left';
+    ctx.fillText(bannerTitle, startX + iconSize + gap, ry + 18);
+    ctx.textAlign = 'center';
 
     ctx.fillStyle = '#FACC15';
     ctx.font = "800 26px 'Trebuchet MS', sans-serif";

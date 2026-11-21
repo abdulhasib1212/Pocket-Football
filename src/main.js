@@ -8,6 +8,7 @@ import { TEAMS, TEAMS_LIST } from './game/constants.js';
 import { AudioManager } from './game/audio.js';
 import { TournamentManager } from './game/tournament.js';
 import { CrazyGamesBridge } from './game/crazygames.js';
+import { getClubCrestSvg } from './game/crests.js';
 
 window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('gameCanvas');
@@ -34,40 +35,13 @@ window.addEventListener('DOMContentLoaded', () => {
   // Helper to play tactile UI click
   const clickSound = () => audio.playClick();
 
-  // Preload lightweight WebP club crests immediately for instant picker & HUD rendering
-  TEAMS_LIST.forEach((team) => {
-    if (team.logo && typeof Image !== 'undefined') {
-      const preload = new Image();
-      preload.decoding = 'async';
-      preload.src = team.logo;
-    }
-  });
-
   const setBadgeContent = (container, team, variantClass = 'club-logo-inline') => {
     if (!container) return;
-    if (team && team.logo) {
-      container.innerHTML = '';
-      const wrap = document.createElement('span');
-      wrap.className = `club-logo-frame ${variantClass}`;
-      const img = document.createElement('img');
-      img.src = team.logo;
-      img.alt = `${team.name || 'Club'} crest`;
-      img.className = 'club-logo-img';
-      img.decoding = 'async';
-      img.referrerPolicy = 'no-referrer';
-      wrap.appendChild(img);
-      container.appendChild(wrap);
-    } else {
-      container.textContent = team?.badge || '⚽';
-    }
+    container.innerHTML = `<span class="club-logo-frame ${variantClass}">${getClubCrestSvg(team)}</span>`;
   };
 
-  const clubLogoHtml = (team, variantClass = 'club-logo-card') => {
-    if (team && team.logo) {
-      return `<span class="club-logo-frame ${variantClass}"><img src="${team.logo}" alt="${team.name || 'Club'} crest" class="club-logo-img" decoding="async" referrerpolicy="no-referrer" /></span>`;
-    }
-    return `<span>${team?.badge || '⚽'}</span>`;
-  };
+  const clubLogoHtml = (team, variantClass = 'club-logo-card') =>
+    `<span class="club-logo-frame ${variantClass}">${getClubCrestSvg(team)}</span>`;
 
   // --- DOM Elements ---
   // Overlays
