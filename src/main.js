@@ -34,6 +34,31 @@ window.addEventListener('DOMContentLoaded', () => {
   // Helper to play tactile UI click
   const clickSound = () => audio.playClick();
 
+  const setBadgeContent = (container, team, variantClass = 'club-logo-inline') => {
+    if (!container) return;
+    if (team && team.logo) {
+      container.innerHTML = '';
+      const wrap = document.createElement('span');
+      wrap.className = `club-logo-frame ${variantClass}`;
+      const img = document.createElement('img');
+      img.src = team.logo;
+      img.alt = `${team.name || 'Club'} crest`;
+      img.className = 'club-logo-img';
+      img.referrerPolicy = 'no-referrer';
+      wrap.appendChild(img);
+      container.appendChild(wrap);
+    } else {
+      container.textContent = team?.badge || '⚽';
+    }
+  };
+
+  const clubLogoHtml = (team, variantClass = 'club-logo-card') => {
+    if (team && team.logo) {
+      return `<span class="club-logo-frame ${variantClass}"><img src="${team.logo}" alt="${team.name || 'Club'} crest" class="club-logo-img" referrerpolicy="no-referrer" /></span>`;
+    }
+    return `<span>${team?.badge || '⚽'}</span>`;
+  };
+
   // --- DOM Elements ---
   // Overlays
   const mainMenuOverlay = document.getElementById('mainMenuOverlay');
@@ -341,10 +366,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const htAwayScore = document.getElementById('htAwayScore');
     const htStatsList = document.getElementById('htStatsList');
 
-    if (htHomeBadge) htHomeBadge.textContent = homeTeam.badge;
+    setBadgeContent(htHomeBadge, homeTeam, 'club-logo-modal');
     if (htHomeName) htHomeName.textContent = homeTeam.name;
     if (htHomeScore) htHomeScore.textContent = score.blue;
-    if (htAwayBadge) htAwayBadge.textContent = awayTeam.badge;
+    setBadgeContent(htAwayBadge, awayTeam, 'club-logo-modal');
     if (htAwayName) htAwayName.textContent = awayTeam.name;
     if (htAwayScore) htAwayScore.textContent = score.red;
 
@@ -408,15 +433,15 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Update HUD with team metadata & high-contrast accent colors
     if (homeShortNameEl) {
-      homeShortNameEl.textContent = homeTeamConfig.shortName || 'BLU';
+      homeShortNameEl.textContent = homeTeamConfig.shortName || 'CTY';
       homeShortNameEl.style.color = homeTeamConfig.accentColor || '#38BDF8';
     }
     if (awayShortNameEl) {
-      awayShortNameEl.textContent = awayTeamConfig.shortName || 'RED';
-      awayShortNameEl.style.color = awayTeamConfig.accentColor || '#F87171';
+      awayShortNameEl.textContent = awayTeamConfig.shortName || 'UTD';
+      awayShortNameEl.style.color = awayTeamConfig.accentColor || '#FBBF24';
     }
-    if (homeBadgeIconEl) homeBadgeIconEl.textContent = homeTeamConfig.badge || '⚽';
-    if (awayBadgeIconEl) awayBadgeIconEl.textContent = awayTeamConfig.badge || '⚽';
+    setBadgeContent(homeBadgeIconEl, homeTeamConfig, 'club-logo-hud');
+    setBadgeContent(awayBadgeIconEl, awayTeamConfig, 'club-logo-hud');
 
     if (scoreBlueEl) {
       scoreBlueEl.textContent = '0';
@@ -526,7 +551,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const preHomeLineup = document.getElementById('preHomeLineup');
     const preHomeCard = document.getElementById('preMatchHomeCard');
 
-    if (preHomeBadge) preHomeBadge.textContent = homeTeamConfig.badge;
+    setBadgeContent(preHomeBadge, homeTeamConfig, 'club-logo-pre');
     if (preHomeName) preHomeName.textContent = homeTeamConfig.name;
     if (preHomeCard) preHomeCard.style.borderColor = homeTeamConfig.accentColor || homeTeamConfig.shirtColor;
     if (preHomeMeta) {
@@ -549,7 +574,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const preAwayLineup = document.getElementById('preAwayLineup');
     const preAwayCard = document.getElementById('preMatchAwayCard');
 
-    if (preAwayBadge) preAwayBadge.textContent = awayTeamConfig.badge;
+    setBadgeContent(preAwayBadge, awayTeamConfig, 'club-logo-pre');
     if (preAwayName) preAwayName.textContent = awayTeamConfig.name;
     if (preAwayCard) preAwayCard.style.borderColor = awayTeamConfig.accentColor || awayTeamConfig.shirtColor;
     if (preAwayMeta) {
@@ -607,10 +632,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const ftRematchBtn = document.getElementById('ftRematchBtn');
     const ftContinueTournamentBtn = document.getElementById('ftContinueTournamentBtn');
 
-    if (ftHomeBadge) ftHomeBadge.textContent = homeTeam.badge;
+    setBadgeContent(ftHomeBadge, homeTeam, 'club-logo-modal');
     if (ftHomeName) ftHomeName.textContent = homeTeam.name;
     if (ftHomeScore) ftHomeScore.textContent = score.blue;
-    if (ftAwayBadge) ftAwayBadge.textContent = awayTeam.badge;
+    setBadgeContent(ftAwayBadge, awayTeam, 'club-logo-modal');
     if (ftAwayName) ftAwayName.textContent = awayTeam.name;
     if (ftAwayScore) ftAwayScore.textContent = score.red;
 
@@ -739,7 +764,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     if (numberDisplay) numberDisplay.textContent = `#${mvp.number || 10}`;
     if (playerName) playerName.textContent = mvp.name || 'MVP';
-    if (clubBadge) clubBadge.textContent = mvp.teamConfig?.badge || '⚽';
+    setBadgeContent(clubBadge, mvp.teamConfig, 'club-logo-inline');
     if (clubName) {
       clubName.textContent = mvp.teamConfig?.name || 'Club';
       clubName.style.color = mvp.teamConfig?.accentColor || '#38BDF8';
@@ -765,7 +790,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const showChampionScreen = (champTeam) => {
     const banner = document.getElementById('championTeamBanner');
     if (banner) {
-      banner.textContent = `${champTeam.badge} ${champTeam.name.toUpperCase()} LIFTS THE POCKET CUP! ${champTeam.badge}`;
+      banner.innerHTML = `<span class="champion-banner-row">${clubLogoHtml(champTeam, 'club-logo-inline')}<span>${champTeam.name.toUpperCase()} LIFTS THE POCKET CUP!</span>${clubLogoHtml(champTeam, 'club-logo-inline')}</span>`;
     }
     audio.playGoalChime();
     audio.swellCrowd(1.0, 4.0);
@@ -787,7 +812,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const hCard = document.createElement('div');
         hCard.className = `team-select-card ${team.id === quickMatchHomeTeamId ? 'selected' : ''}`;
         hCard.innerHTML = `
-          <div class="team-card-badge">${team.badge}</div>
+          <div class="team-card-badge">${clubLogoHtml(team, 'club-logo-card')}</div>
           <div class="team-card-info">
             <div class="team-card-name">${team.name}</div>
             <div class="team-card-meta">Rating: ${team.rating} · 1-1-1</div>
@@ -805,7 +830,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const aCard = document.createElement('div');
         aCard.className = `team-select-card ${team.id === quickMatchAwayTeamId ? 'selected-red' : ''}`;
         aCard.innerHTML = `
-          <div class="team-card-badge">${team.badge}</div>
+          <div class="team-card-badge">${clubLogoHtml(team, 'club-logo-card')}</div>
           <div class="team-card-info">
             <div class="team-card-name">${team.name}</div>
             <div class="team-card-meta">Rating: ${team.rating} · 1-1-1</div>
@@ -883,7 +908,7 @@ window.addEventListener('DOMContentLoaded', () => {
           const card = document.createElement('div');
           card.className = `team-select-card ${team.id === selectedTournamentTeamId ? 'selected' : ''}`;
           card.innerHTML = `
-            <div class="team-card-badge">${team.badge}</div>
+            <div class="team-card-badge">${clubLogoHtml(team, 'club-logo-card')}</div>
             <div class="team-card-info">
               <div class="team-card-name">${team.name}</div>
               <div class="team-card-meta">OVR ${team.rating}</div>
@@ -943,14 +968,14 @@ window.addEventListener('DOMContentLoaded', () => {
         card.innerHTML = `
           <div class="fixture-team-row ${f.played ? (homeWinner ? 'winner' : 'loser') : ''}">
             <div class="fixture-team-left">
-              <span>${home.badge}</span>
+              ${clubLogoHtml(home, 'club-logo-bracket')}
               <span>${home.name}</span>
             </div>
             <div class="fixture-score">${f.homeScore !== null ? f.homeScore + homeShootout : '-'}</div>
           </div>
           <div class="fixture-team-row ${f.played ? (awayWinner ? 'winner' : 'loser') : ''}">
             <div class="fixture-team-left">
-              <span>${away.badge}</span>
+              ${clubLogoHtml(away, 'club-logo-bracket')}
               <span>${away.name}</span>
             </div>
             <div class="fixture-score">${f.awayScore !== null ? f.awayScore + awayShootout : '-'}</div>

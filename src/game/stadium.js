@@ -38,12 +38,12 @@ function seededNoise(i, salt = 1) {
 
 export class StadiumRenderer {
   constructor() {
-    this.homeShirt = '#1E60FF';
+    this.homeShirt = '#6CABDD';
     this.homeAccent = '#38BDF8';
-    this.homeName = 'BLUE WAVES';
-    this.awayShirt = '#E63946';
-    this.awayAccent = '#F87171';
-    this.awayName = 'RED STRIKERS';
+    this.homeName = 'BLUE CITY';
+    this.awayShirt = '#DA291C';
+    this.awayAccent = '#FBBF24';
+    this.awayName = 'RED UNITED';
 
     this.time = 0;
     this.excitement = 0;
@@ -69,12 +69,12 @@ export class StadiumRenderer {
   }
 
   setTeamColors(homeTeam, awayTeam) {
-    const hShirt = homeTeam?.shirtColor || '#1E60FF';
+    const hShirt = homeTeam?.shirtColor || '#6CABDD';
     const hAccent = homeTeam?.accentColor || '#38BDF8';
-    const hName = (homeTeam?.name || 'BLUE WAVES').toUpperCase();
-    const aShirt = awayTeam?.shirtColor || '#E63946';
-    const aAccent = awayTeam?.accentColor || '#F87171';
-    const aName = (awayTeam?.name || 'RED STRIKERS').toUpperCase();
+    const hName = (homeTeam?.name || 'BLUE CITY').toUpperCase();
+    const aShirt = awayTeam?.shirtColor || '#DA291C';
+    const aAccent = awayTeam?.accentColor || '#FBBF24';
+    const aName = (awayTeam?.name || 'RED UNITED').toUpperCase();
 
     const changed =
       hShirt !== this.homeShirt ||

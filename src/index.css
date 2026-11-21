@@ -103,6 +103,70 @@
   font-size: 0.9rem;
 }
 
+.club-logo-frame {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #0b1424;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+.club-logo-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transform: scale(1.16);
+  pointer-events: none;
+}
+
+.club-logo-hud {
+  width: 22px;
+  height: 22px;
+}
+
+.club-logo-card {
+  width: 34px;
+  height: 34px;
+}
+
+.club-logo-pre {
+  width: 62px;
+  height: 62px;
+  border-width: 1.5px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+}
+
+.club-logo-modal {
+  width: 48px;
+  height: 48px;
+  border-width: 1.5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.club-logo-bracket {
+  width: 20px;
+  height: 20px;
+}
+
+.club-logo-inline {
+  width: 22px;
+  height: 22px;
+}
+
+.champion-banner-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .team-shortname {
   font-family: "Barlow Condensed", sans-serif;
   font-weight: 800;
@@ -321,7 +385,28 @@
 }
 
 .menu-logo-box {
-  margin-bottom: 1.25rem;
+  width: 100%;
+  margin-bottom: 1.05rem;
+}
+
+.menu-logo-frame {
+  width: 100%;
+  aspect-ratio: 16 / 7.8;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #0d1828;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  box-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.55);
+}
+
+.menu-logo-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 56%;
+  transform: scale(1.18);
+  pointer-events: none;
 }
 
 .menu-trophy-badge {
@@ -1728,6 +1813,10 @@ body.touch-hud-active .arcade-footer {
     font-size: 0.82rem;
     gap: 0.24rem;
   }
+  .club-logo-hud {
+    width: 18px;
+    height: 18px;
+  }
   .team-shortname {
     font-size: 0.84rem;
   }
@@ -1816,7 +1905,13 @@ body.touch-hud-active .arcade-footer {
     padding: 0.85rem 1.2rem;
   }
   .menu-logo-box {
-    margin-bottom: 0.6rem;
+    margin-bottom: 0.55rem;
+  }
+  .menu-logo-frame {
+    max-width: 265px;
+    margin: 0 auto;
+    aspect-ratio: 16 / 7.4;
+    border-radius: 10px;
   }
   .menu-trophy-badge {
     font-size: 1.75rem;
@@ -1908,6 +2003,10 @@ body.touch-hud-active .arcade-footer {
     font-size: 1.65rem;
     margin-bottom: 0.18rem;
   }
+  .club-logo-pre {
+    width: 44px;
+    height: 44px;
+  }
   .pre-team-name {
     font-size: 1.15rem;
   }
@@ -1938,6 +2037,10 @@ body.touch-hud-active .arcade-footer {
   }
   .ft-badge {
     font-size: 1.45rem;
+  }
+  .club-logo-modal {
+    width: 34px;
+    height: 34px;
   }
   .ft-score-num {
     font-size: 1.85rem;

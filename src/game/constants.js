@@ -1,6 +1,14 @@
 /**
  * Pocket Football League - Constants & Configuration
  */
+import blueCityCrest from '../assets/images/blue_city_crest_1795280512073.jpg';
+import redUnitedCrest from '../assets/images/red_united_crest_1795280511608.jpg';
+import madridBlancosCrest from '../assets/images/madrid_blancos_crest_1795280511218.jpg';
+import barcaBlaugranaCrest from '../assets/images/barca_blaugrana_crest_1795280512398.jpg';
+import milanDevilsCrest from '../assets/images/milan_devils_crest_1795280511619.jpg';
+import munichTitansCrest from '../assets/images/munich_titans_crest_1795280512909.jpg';
+import londonGunnersCrest from '../assets/images/london_gunners_crest_1795280512053.jpg';
+import parisStarsCrest from '../assets/images/paris_stars_crest_1795280512539.jpg';
 
 export const PITCH = {
   // World coordinates (centered at 0, 0)
@@ -62,42 +70,44 @@ export const PHYSICS = {
 export const TEAMS = {
   waves: {
     id: 'waves',
-    name: 'Blue Waves',
-    shortName: 'BLU',
-    badge: '🌊',
-    rating: 91,
-    shirtColor: '#1E60FF',
+    name: 'Blue City',
+    shortName: 'CTY',
+    badge: '⛵',
+    logo: blueCityCrest,
+    rating: 93,
+    shirtColor: '#6CABDD',
     accentColor: '#38BDF8',
     shirtTrim: '#FFFFFF',
-    shortsColor: '#0E2E72',
-    socksColor: '#1E60FF',
-    numberColor: '#FFFFFF',
-    gkColor: '#FFB703',
-    gkShorts: '#212529',
+    shortsColor: '#FFFFFF',
+    socksColor: '#6CABDD',
+    numberColor: '#1C2C5B',
+    gkColor: '#FDE047',
+    gkShorts: '#0F172A',
     roster: {
-      gk: { name: 'Casillos', number: 1 },
-      df: { name: 'Maldeni', number: 4 },
-      fw: { name: 'Massi', number: 10 }
+      gk: { name: 'Edersan', number: 31 },
+      df: { name: 'Kampany', number: 4 },
+      fw: { name: 'Haalond', number: 9 }
     }
   },
   strikers: {
     id: 'strikers',
-    name: 'Red Strikers',
-    shortName: 'RED',
-    badge: '⚡',
-    rating: 90,
-    shirtColor: '#E63946',
-    accentColor: '#F87171',
-    shirtTrim: '#FFFFFF',
-    shortsColor: '#590D14',
-    socksColor: '#E63946',
+    name: 'Red United',
+    shortName: 'UTD',
+    badge: '🔱',
+    logo: redUnitedCrest,
+    rating: 91,
+    shirtColor: '#DA291C',
+    accentColor: '#FBBF24',
+    shirtTrim: '#111827',
+    shortsColor: '#FFFFFF',
+    socksColor: '#111827',
     numberColor: '#FFFFFF',
-    gkColor: '#06D6A0',
-    gkShorts: '#114B3E',
+    gkColor: '#10B981',
+    gkShorts: '#111827',
     roster: {
-      gk: { name: 'Baffon', number: 1 },
-      df: { name: 'Nesto', number: 3 },
-      fw: { name: 'Ronaldi', number: 9 }
+      gk: { name: 'De Gea', number: 1 },
+      df: { name: 'Ferdinend', number: 5 },
+      fw: { name: 'Ronaldo', number: 7 }
     }
   },
   blancos: {
@@ -105,6 +115,7 @@ export const TEAMS = {
     name: 'Madrid Blancos',
     shortName: 'MAD',
     badge: '👑',
+    logo: madridBlancosCrest,
     rating: 94,
     shirtColor: '#F8FAFC',
     accentColor: '#FACC15',
@@ -122,10 +133,11 @@ export const TEAMS = {
   },
   blau: {
     id: 'blau',
-    name: 'Barcelona Blau',
+    name: 'Barcelona Blaugrana',
     shortName: 'BAR',
     badge: '🟣',
-    rating: 92,
+    logo: barcaBlaugranaCrest,
+    rating: 93,
     shirtColor: '#800020',
     accentColor: '#FBBF24',
     shirtTrim: '#1D4ED8',
@@ -137,7 +149,7 @@ export const TEAMS = {
     roster: {
       gk: { name: 'Ter Stagen', number: 1 },
       df: { name: 'Puyal', number: 5 },
-      fw: { name: 'Ronaldenho', number: 10 }
+      fw: { name: 'Massi', number: 10 }
     }
   },
   devils: {
@@ -145,6 +157,7 @@ export const TEAMS = {
     name: 'Milan Devils',
     shortName: 'MIL',
     badge: '😈',
+    logo: milanDevilsCrest,
     rating: 89,
     shirtColor: '#DC2626',
     accentColor: '#EF4444',
@@ -165,6 +178,7 @@ export const TEAMS = {
     name: 'Munich Titans',
     shortName: 'MUN',
     badge: '🛡️',
+    logo: munichTitansCrest,
     rating: 93,
     shirtColor: '#B91C1C',
     accentColor: '#F87171',
@@ -185,6 +199,7 @@ export const TEAMS = {
     name: 'London Gunners',
     shortName: 'LON',
     badge: '🎯',
+    logo: londonGunnersCrest,
     rating: 88,
     shirtColor: '#EF4444',
     accentColor: '#F87171',
@@ -205,6 +220,7 @@ export const TEAMS = {
     name: 'Paris Stars',
     shortName: 'PAR',
     badge: '⭐',
+    logo: parisStarsCrest,
     rating: 90,
     shirtColor: '#1E293B',
     accentColor: '#FB7185',

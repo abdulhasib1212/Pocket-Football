@@ -9,6 +9,7 @@
     <meta property="og:description" content="A browser-based 2.5D arcade 3v3 football game with professional broadcast presentation, crowd ambience, quick match, and 8-team knockout tournament." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="./assets/aistudio/Pocket_Football_League_logo_81701770.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;1,800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -102,9 +103,14 @@
           </button>
           <div class="menu-card glass-panel">
             <div class="menu-logo-box">
-              <div class="menu-trophy-badge" aria-hidden="true">🏆</div>
-              <h1 class="game-title">POCKET FOOTBALL</h1>
-              <div class="game-subtitle">LEAGUE 2026 · 3V3 ARCADE</div>
+              <div class="menu-logo-frame">
+                <img
+                  src="./assets/aistudio/Pocket_Football_League_logo_81701770.png"
+                  alt="Pocket Football League 2026 · 3v3 Arcade"
+                  class="menu-logo-img"
+                />
+              </div>
+              <h1 class="sr-only">Pocket Football League 2026 · 3v3 Arcade</h1>
             </div>
 
             <div class="menu-buttons-group">
@@ -211,8 +217,8 @@
             <div class="pre-match-teams-wrapper">
               <!-- Left Team -->
               <div class="pre-match-team" id="preMatchHomeCard">
-                <div class="pre-match-badge" id="preHomeBadge">🌊</div>
-                <h3 class="pre-team-name" id="preHomeName">Blue Waves</h3>
+                <div class="pre-match-badge" id="preHomeBadge">⛵</div>
+                <h3 class="pre-team-name" id="preHomeName">Blue City</h3>
                 <div id="preHomeMeta" class="pre-formation-meta">Formation 1-1-1 · Home</div>
                 <div class="lineup-box" id="preHomeLineup">
                   <!-- GK, DF, FW names -->
@@ -227,8 +233,8 @@
 
               <!-- Right Team -->
               <div class="pre-match-team" id="preMatchAwayCard">
-                <div class="pre-match-badge" id="preAwayBadge">⚡</div>
-                <h3 class="pre-team-name" id="preAwayName">Red Strikers</h3>
+                <div class="pre-match-badge" id="preAwayBadge">🔱</div>
+                <h3 class="pre-team-name" id="preAwayName">Red United</h3>
                 <div id="preAwayMeta" class="pre-formation-meta">Formation 1-1-1 · Away</div>
                 <div class="lineup-box" id="preAwayLineup">
                   <!-- GK, DF, FW names -->
@@ -356,20 +362,20 @@
 
             <div class="fulltime-score-box">
               <div class="ft-team-side">
-                <div id="ftHomeBadge" class="ft-badge">🌊</div>
-                <div id="ftHomeName" class="ft-team-name">Blue Waves</div>
+                <div id="ftHomeBadge" class="ft-badge">⛵</div>
+                <div id="ftHomeName" class="ft-team-name">Blue City</div>
                 <div id="ftHomeScore" class="ft-score-num">0</div>
               </div>
               <div class="ft-vs-divider">-</div>
               <div class="ft-team-side">
                 <div id="ftAwayScore" class="ft-score-num">0</div>
-                <div id="ftAwayName" class="ft-team-name">Red Strikers</div>
-                <div id="ftAwayBadge" class="ft-badge">⚡</div>
+                <div id="ftAwayName" class="ft-team-name">Red United</div>
+                <div id="ftAwayBadge" class="ft-badge">🔱</div>
               </div>
             </div>
 
             <div id="fullTimeOutcomeMsg" class="fulltime-outcome-banner">
-              BLUE WAVES VICTORIOUS!
+              BLUE CITY VICTORIOUS!
             </div>
 
             <div id="penaltyShootoutNote" class="penalty-shootout-note hidden">
@@ -416,15 +422,15 @@
               <!-- Jersey & Number Display -->
               <div class="mvp-jersey-circle" id="mvpJerseyCircle">
                 <div class="mvp-jersey-icon" aria-hidden="true">👕</div>
-                <div id="mvpNumberDisplay" class="mvp-number-display">#10</div>
+                <div id="mvpNumberDisplay" class="mvp-number-display">#9</div>
               </div>
 
               <!-- Player Details -->
               <div class="mvp-player-info">
-                <h2 id="mvpPlayerName" class="mvp-player-name">Massi</h2>
+                <h2 id="mvpPlayerName" class="mvp-player-name">Haalond</h2>
                 <div class="mvp-club-row">
-                  <span id="mvpClubBadge" class="mvp-club-badge">🌊</span>
-                  <span id="mvpClubName" class="mvp-club-name">Blue Waves</span>
+                  <span id="mvpClubBadge" class="mvp-club-badge">⛵</span>
+                  <span id="mvpClubName" class="mvp-club-name">Blue City</span>
                 </div>
               </div>
 
@@ -478,7 +484,7 @@
             <div class="champion-trophy-glow" aria-hidden="true">🏆</div>
             <h1 class="champion-title">TOURNAMENT CHAMPIONS</h1>
             <div id="championTeamBanner" class="champion-team-banner">
-              BLUE WAVES LIFT THE CUP
+              BLUE CITY LIFT THE CUP
             </div>
             <p class="champion-desc">
               You have conquered the Pocket Football League knockout championship.
