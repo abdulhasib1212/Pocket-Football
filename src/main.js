@@ -7,8 +7,8 @@ import { GameEngine } from './game/engine.js';
 import { TEAMS, TEAMS_LIST } from './game/constants.js';
 import { AudioManager } from './game/audio.js';
 import { TournamentManager } from './game/tournament.js';
-import { CrazyGamesBridge } from './game/crazygames.js';
 import { getClubCrestSvg } from './game/crests.js';
+import { GamePixBridge } from './game/gamepix.js';
 
 window.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('gameCanvas');
@@ -17,11 +17,71 @@ window.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  // --- Shared Audio, Tournament & CrazyGames SDK Systems ---
+  // --- Shared Audio, Tournament & GamePix SDK Systems ---
   const audio = new AudioManager();
   const tournament = new TournamentManager();
-  const crazyGames = new CrazyGamesBridge();
-  crazyGames.init();
+  const gamePix = new GamePixBridge();
+  let sdkMutedBeforeAd = false;
+  let sdkPausedMatch = false;
+
+  const syncMuteButtonsUI = () => {
+    const unmuted = !audio.isMuted;
+    const quickBtn = document.getElementById('soundQuickBtn');
+    const muteBtn = document.getElementById('muteToggleBtn');
+    if (quickBtn) quickBtn.textContent = unmuted ? '🔊 Sound' : '🔇 Muted';
+    if (muteBtn) muteBtn.textContent = unmuted ? 'Mute Audio' : 'Unmute Audio';
+  };
+
+  const pauseForSdk = () => {
+    sdkMutedBeforeAd = audio.isMuted;
+    audio.setMuted(true);
+    syncMuteButtonsUI();
+    if (appState === 'PLAYING' && activeEngine && !activeEngine.isPaused && !activeEngine.isFullTime && !activeEngine.isHalfTime) {
+      sdkPausedMatch = true;
+      activeEngine.setPaused(true);
+      audio.setCrowdPaused(true);
+      updateTouchControlsVisibility();
+    }
+  };
+
+  const resumeFromSdk = () => {
+    audio.setMuted(sdkMutedBeforeAd);
+    syncMuteButtonsUI();
+    if (sdkPausedMatch) {
+      sdkPausedMatch = false;
+      const settingsOpen = settingsModal && settingsModal.classList.contains('active');
+      if (!settingsOpen && appState === 'PLAYING' && activeEngine && !activeEngine.isFullTime && !activeEngine.isHalfTime) {
+        activeEngine.setPaused(false);
+        audio.setCrowdPaused(false);
+        updateTouchControlsVisibility();
+      }
+    }
+  };
+
+  gamePix.init({
+    onPause: pauseForSdk,
+    onResume: resumeFromSdk,
+    onSoundOff: () => {
+      sdkMutedBeforeAd = audio.isMuted;
+      audio.setMuted(true);
+      syncMuteButtonsUI();
+    },
+    onSoundOn: () => {
+      audio.setMuted(false);
+      syncMuteButtonsUI();
+    }
+  });
+
+  const runWithInterstitialAd = async (callback) => {
+    if (gamePix.isShowingAd) return;
+    await gamePix.requestInterstitialAd({
+      onBeforeAd: pauseForSdk,
+      onAfterAd: resumeFromSdk
+    });
+    if (typeof callback === 'function') {
+      callback();
+    }
+  };
 
   // Unlock Web Audio API on first user interaction
   const unlockAudioOnGesture = () => {
@@ -288,32 +348,13 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   }, { passive: true });
 
-  // Helper to run a transition through a CrazyGames midgame ad with audio/pause safety
-  const runWithMidgameAd = (onComplete) => {
-    const wasMuted = audio.isMuted;
-    const wasPaused = activeEngine ? activeEngine.isPaused : false;
-    crazyGames.requestAd('midgame', {
-      onAdStart: () => {
-        audio.setMuted(true);
-        if (activeEngine && appState === 'PLAYING') {
-          activeEngine.setPaused(true);
-        }
-      },
-      onAdEnd: () => {
-        audio.setMuted(wasMuted);
-        if (activeEngine && appState === 'PLAYING' && !wasPaused && !activeEngine.isHalfTime && !activeEngine.isFullTime) {
-          activeEngine.setPaused(false);
-        }
-        if (onComplete) onComplete();
-      }
-    });
-  };
-
   // Transition back to Main Menu
   const returnToMainMenu = () => {
+    if (appState === 'PLAYING') {
+      gamePix.gameStop();
+    }
     appState = 'MENU';
     isLocalMultiplayerMatch = false;
-    crazyGames.gameplayStop();
     audio.stopCrowdAmbience();
     audio.setMusicDucked(false);
     audio.setMusicTrack('menu');
@@ -338,7 +379,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Render Match Stats Comparison Bars inside Half-Time Modal
   const showHalfTimeModal = ({ score, homeTeam, awayTeam, stats }) => {
-    crazyGames.gameplayStop();
     audio.stopCrowdAmbience();
     audio.setMusicDucked(false);
     audio.setMusicTrack('halftime');
@@ -455,6 +495,9 @@ window.addEventListener('DOMContentLoaded', () => {
         onScoreChanged: (score) => {
           if (scoreBlueEl) scoreBlueEl.textContent = score.blue;
           if (scoreRedEl) scoreRedEl.textContent = score.red;
+          if (!isLocalMultiplayerMatch) {
+            gamePix.updateScore(score.blue);
+          }
         },
         onTimeUpdated: (remainingSeconds, halfInfo) => {
           if (matchClockEl) {
@@ -498,7 +541,6 @@ window.addEventListener('DOMContentLoaded', () => {
           audio.setMusicDucked(false);
           audio.setMusicTrack(null);
           audio.startCrowdAmbience({ isTournamentFinal });
-          crazyGames.gameplayStart();
         },
         onMatchEnd: (results) => {
           handleMatchFinished(results);
@@ -517,11 +559,16 @@ window.addEventListener('DOMContentLoaded', () => {
     );
 
     activeEngine.start();
+    if (currentMode === 'TOURNAMENT') {
+      gamePix.updateLevel((tournament.currentRoundIndex || 0) + 1);
+    } else {
+      gamePix.updateLevel(1);
+    }
+    gamePix.gameStart();
     audio.setMusicDucked(false);
     audio.setMusicTrack(null);
     audio.startCrowdAmbience({ isTournamentFinal });
     updateTouchControlsVisibility();
-    crazyGames.gameplayStart();
   };
 
   // --- Show Pre-Match Broadcast Intro Screen ---
@@ -599,7 +646,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // --- Match Finished / Results Presentation with Comprehensive Tie Logic ---
   const handleMatchFinished = ({ score, homeTeam, awayTeam, winner, isDraw, isGoldenGoalWin, isPenaltyShootout, penalties, mvp }) => {
-    crazyGames.gameplayStop();
+    gamePix.gameStop();
+    if (!isLocalMultiplayerMatch) {
+      gamePix.updateScore(score.blue);
+      if (winner === 'blue') {
+        gamePix.happyMoment();
+      }
+    }
     audio.stopCrowdAmbience();
     audio.setMusicDucked(false);
     audio.setMusicTrack('fulltime');
@@ -642,7 +695,6 @@ window.addEventListener('DOMContentLoaded', () => {
       if (tResult.champion) {
         // Player's team won the Grand Final: Tournament Champions!
         ftOutcome.textContent = `🏆 ${homeTeam.name.toUpperCase()} LIFT THE POCKET CUP!`;
-        crazyGames.happytime();
         setTimeout(() => {
           showChampionScreen(homeTeam);
         }, 2200);
@@ -669,9 +721,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
       } else {
         // Player won Quarter-Final or Semi-Final!
-        if (isGoldenGoalWin || isPenaltyShootout) {
-          crazyGames.happytime();
-        }
         const nextRoundName = tournament.roundNames[tournament.currentRoundIndex] || 'Next Round';
         if (isPenaltyShootout) {
           ftOutcome.textContent = `🎉 VICTORY ON PENALTIES! ADVANCING TO ${nextRoundName.toUpperCase()}!`;
@@ -703,7 +752,6 @@ window.addEventListener('DOMContentLoaded', () => {
           };
         }
       } else if (winner === 'blue') {
-        if (isGoldenGoalWin) crazyGames.happytime();
         ftOutcome.textContent = isGoldenGoalWin
           ? `⚡ GOLDEN GOAL! ${homeTeam.name.toUpperCase()} WINS!`
           : `🎉 ${homeTeam.name.toUpperCase()} WINS!`;
@@ -778,7 +826,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     audio.playGoalChime();
     audio.swellCrowd(1.0, 4.0);
-    crazyGames.happytime();
+    gamePix.happyMoment();
     showScreen(championModal);
   };
 
@@ -1120,14 +1168,13 @@ window.addEventListener('DOMContentLoaded', () => {
     startSecondHalfBtn.addEventListener('click', () => {
       clickSound();
       hideAllOverlays();
-      runWithMidgameAd(() => {
+      runWithInterstitialAd(() => {
         if (activeEngine) {
           activeEngine.startSecondHalf();
         }
         audio.setMusicDucked(false);
         audio.setMusicTrack(null);
         audio.startCrowdAmbience({ isTournamentFinal: !!(activeEngine && activeEngine.isTournamentFinal) });
-        crazyGames.gameplayStart();
         updateTouchControlsVisibility();
       });
     });
@@ -1147,9 +1194,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const awayTeam = lastActiveAwayTeam || TEAMS[quickMatchAwayTeamId] || TEAMS.strikers;
     const dur = lastActiveDuration || quickMatchDuration;
     const is2p = lastActiveIsLocal2p;
-    runWithMidgameAd(() => {
-      showPreMatchIntro(homeTeam, awayTeam, dur, is2p);
-    });
+    showPreMatchIntro(homeTeam, awayTeam, dur, is2p);
   };
 
   const ftViewMvpBtn = document.getElementById('ftViewMvpBtn');
@@ -1164,7 +1209,9 @@ window.addEventListener('DOMContentLoaded', () => {
   if (ftRematchBtn) {
     ftRematchBtn.addEventListener('click', () => {
       clickSound();
-      triggerRematch();
+      runWithInterstitialAd(() => {
+        triggerRematch();
+      });
     });
   }
 
@@ -1172,7 +1219,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (ftContinueTournamentBtn) {
     ftContinueTournamentBtn.addEventListener('click', () => {
       clickSound();
-      runWithMidgameAd(() => {
+      runWithInterstitialAd(() => {
         audio.setMusicTrack('menu');
         updateTournamentBadge();
         renderTournamentBracket();
@@ -1202,7 +1249,9 @@ window.addEventListener('DOMContentLoaded', () => {
   if (mvpRematchBtn) {
     mvpRematchBtn.addEventListener('click', () => {
       clickSound();
-      triggerRematch();
+      runWithInterstitialAd(() => {
+        triggerRematch();
+      });
     });
   }
 
@@ -1210,7 +1259,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (mvpContinueTournBtn) {
     mvpContinueTournBtn.addEventListener('click', () => {
       clickSound();
-      runWithMidgameAd(() => {
+      runWithInterstitialAd(() => {
         audio.setMusicTrack('menu');
         updateTournamentBadge();
         renderTournamentBracket();
@@ -1549,7 +1598,6 @@ window.addEventListener('DOMContentLoaded', () => {
     activeEngine.setPaused(true);
     audio.setMusicDucked(true);
     audio.setCrowdPaused(true);
-    crazyGames.gameplayStop();
     if (settingsPausedBadge) settingsPausedBadge.classList.remove('hidden');
     if (pauseMatchActions) pauseMatchActions.classList.remove('hidden');
     if (doneSettingsBtn) doneSettingsBtn.textContent = 'Resume Match';
@@ -1568,7 +1616,6 @@ window.addEventListener('DOMContentLoaded', () => {
       if (activeEngine) {
         activeEngine.setPaused(false);
       }
-      crazyGames.gameplayStart();
       updateTouchControlsVisibility();
     } else {
       audio.setMusicDucked(false);

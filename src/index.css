@@ -2111,3 +2111,9 @@ body.touch-hud-active .arcade-footer {
     justify-content: center;
   }
 }
+
+/* Ensure GamePix test/interstitial ad overlay sits above game HUD & modals */
+#adMainContainer {
+  z-index: 99999 !important;
+}
+
